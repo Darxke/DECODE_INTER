@@ -57,11 +57,11 @@ import java.util.List;
 public final class MecanumDrive {
     public static class Params {
         public RevHubOrientationOnRobot.LogoFacingDirection logoFacingDirection =
-                RevHubOrientationOnRobot.LogoFacingDirection.UP;
+                RevHubOrientationOnRobot.LogoFacingDirection.RIGHT;
         public RevHubOrientationOnRobot.UsbFacingDirection usbFacingDirection =
-                RevHubOrientationOnRobot.UsbFacingDirection.RIGHT;
+                RevHubOrientationOnRobot.UsbFacingDirection.UP;
 
-        public double inPerTick = 0.0019619384;
+        public double inPerTick = 120/60754;
         public double lateralInPerTick = 0.0012601261332148685;
         public double trackWidthTicks = 7441.509929356141;
 
