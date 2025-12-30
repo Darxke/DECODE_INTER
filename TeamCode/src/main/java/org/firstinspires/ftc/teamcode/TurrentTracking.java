@@ -1,234 +1,376 @@
 package org.firstinspires.ftc.teamcode;
 
+import com.qualcomm.hardware.limelightvision.LLResult;
+import com.qualcomm.hardware.limelightvision.LLResultTypes;
+import com.qualcomm.hardware.limelightvision.Limelight3A;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
-import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.IMU;
+import com.qualcomm.robotcore.hardware.Servo;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+
+import java.util.List;
 
 @TeleOp(name = "TurrentTracking", group = "Test")
 public class TurrentTracking extends LinearOpMode {
 
-    // Turret motor (312 rpm, 48-20-200 gear train)
+    // ====== DRIVE ======
+    private DcMotor leftFront;
+    private DcMotor rightFront;
+    private DcMotor leftBack;
+    private DcMotor rightBack;
+
+    // ====== TURRET ======
     private DcMotorEx turret;
 
-    // Drive motors - make sure these names match your RC config
-    private DcMotor leftFront, rightFront, leftBack, rightBack;
+    // ====== OUTTAKE (shooter) ======
+    private DcMotorEx outtake;
 
-    // IMU - check the name in your config
+    // ====== KICKERS ======
+    private Servo kick1;
+    private Servo kick2;
+    private Servo kick3;
+
+    private static final double KICK_REST_POS = 0.0;
+    private static final double KICK_FIRE_POS = 1.0;
+
+    // ====== IMU ======
     private IMU imu;
 
-    // ===== PID for turret =====
-    // Slightly calmer since ticks/deg is larger now
-    private double kP = 0.0025;
-    private double kI = 0.0;
-    private double kD = 0.0008;
+    // encoder → degrees for turret
+    private static final double TICKS_PER_DEGREE = 4.44;
+    private static final double TURRET_SIGN = 1.0;   // flip to -1.0 if turret angle inverted
+    private static final double HEADING_SIGN = -1.0; // flip to 1.0 if heading feels backwards
 
-    private double integral = 0;
-    private double lastError = 0;
+    private double headingFiltered = 0.0;
+    private static final double HEADING_FILTER_ALPHA = 0.25;
 
-    // Separate timers so PID dt and target dt do not fight each other
-    private double lastTimePID = 0;
-    private double lastTimeTarget = 0;
+    // world lock: field direction turret should face when tag is lost
+    private double worldTargetAngle = 0.0;
+    private boolean hasWorldTarget = false;
 
-    // 312 rpm motor, 48-20-200 gear: 2240 ticks / 360 deg ≈ 6.22 ticks/deg
-    private final double TICKS_PER_DEGREE = 6.22;
+    // world-lock gains (softer to avoid shaking)
+    private static final double K_AIM_WORLD = 0.03;
+    private static final double MAX_TURRET_POWER_WORLD = 0.6;
+    private static final double ANGLE_DEADBAND_DEG = 1.5;
 
-    // Soft limits in encoder ticks - change to safe physical limits
-    // 6.22 ticks/deg → 1500 ticks ≈ 241 deg
-    private int TURRET_MIN = -1500;
-    private int TURRET_MAX = 1500;
+    // ====== LIMELIGHT ======
+    private Limelight3A limelight;
 
-    // Desired turret angle relative to ROBOT, in degrees (-180 to 180)
-    private double turretTargetDegrees = 0;
+    private static final int TARGET_TAG_ID = 24;
 
-    // Direction of the goal in FIELD coordinates (degrees, -180 to 180)
-    private double goalHeading = 0;
+    // Softer LL PID to reduce shaking
+    private static final double LIMELIGHT_KP_TURN = 0.02;
+    private static final double LIMELIGHT_MAX_TURN = 0.5;
+    private static final double LIMELIGHT_AIM_TOLERANCE = 1.0;
+
+    // offset for camera vs shooter. Leave 0 while we debug.
+    private static final double AIM_OFFSET_DEG = 0.0;
+
+    private double lastTx = 0.0;
+    private double txFiltered = 0.0;          // low-pass filtered tx
+    private static final double TX_FILTER_ALPHA = 0.3;
+
+    private boolean haveTargetCached = false;
+    private int lostTargetFrames = 0;
+    private static final int MAX_LOST_FRAMES = 10;
+
+    // ====== SHOOTER DISTANCE → RPM ======
+    private static final double TICKS_PER_REV = 28.0;   // goBILDA 435rpm motor
+    private static final double MIN_RPM = 0.0;
+    private static final double MAX_RPM = 6000.0;
+
+    // tune these based on what actually scores
+    private static final double FAR_RPM   = 3500.0;  // when tag is small / far
+    private static final double CLOSE_RPM = 2500.0;  // when tag is big / close
+
+    // rough guess for Limelight targetArea (%) range, you will tune this
+    private static final double AREA_FAR   = 1.0;    // small area = far
+    private static final double AREA_CLOSE = 10.0;   // big area = close
+
+    private double lastTargetArea = 0.0;
+    private double lastComputedRpm = 0.0;
 
     @Override
     public void runOpMode() throws InterruptedException {
 
-        // ====== HARDWARE MAP ======
-        turret = hardwareMap.get(DcMotorEx.class, "turret");
-
+        // ===== DRIVE =====
         leftFront  = hardwareMap.get(DcMotor.class, "leftFront");
         rightFront = hardwareMap.get(DcMotor.class, "rightFront");
         leftBack   = hardwareMap.get(DcMotor.class, "leftBack");
         rightBack  = hardwareMap.get(DcMotor.class, "rightBack");
 
-        imu = hardwareMap.get(IMU.class, "imu");
+        leftFront.setDirection(DcMotor.Direction.REVERSE);
+        leftBack.setDirection(DcMotor.Direction.REVERSE);
+        rightFront.setDirection(DcMotor.Direction.FORWARD);
+        rightBack.setDirection(DcMotor.Direction.FORWARD);
 
-        // Reset yaw so 0 is "starting direction"
-        imu.resetYaw();
+        leftFront.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        rightFront.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        leftBack.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        rightBack.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
-        // One side reversed so forward is actually forward (flip sides if needed)
-        leftFront.setDirection(DcMotor.Direction.FORWARD);
-        leftBack.setDirection(DcMotor.Direction.FORWARD);
-        rightFront.setDirection(DcMotor.Direction.REVERSE);
-        rightBack.setDirection(DcMotor.Direction.REVERSE);
-
+        // ===== TURRET =====
+        turret = hardwareMap.get(DcMotorEx.class, "turret");
+        turret.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        turret.setDirection(DcMotorSimple.Direction.FORWARD); // flip if backwards
         turret.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         turret.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        turret.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
-        lastTimePID = getRuntime();
-        lastTimeTarget = getRuntime();
+        // ===== OUTTAKE =====
+        outtake = hardwareMap.get(DcMotorEx.class, "outtake");
+        outtake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        outtake.setDirection(DcMotorSimple.Direction.REVERSE); // flip if wrong way
+        outtake.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        outtake.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
 
-        telemetry.addLine("TurrentTracking ready (Gamepad 1 only)");
+        // ===== KICKERS =====
+        kick1 = hardwareMap.get(Servo.class, "kick1");
+        kick2 = hardwareMap.get(Servo.class, "kick2");
+        kick3 = hardwareMap.get(Servo.class, "kick3");
+
+        kick1.setPosition(KICK_REST_POS);
+        kick2.setPosition(KICK_REST_POS);
+        kick3.setPosition(KICK_REST_POS);
+
+        // ===== IMU =====
+        imu = hardwareMap.get(IMU.class, "imu");
+        imu.resetYaw();
+        headingFiltered = getSignedHeading();
+
+        // ===== LIMELIGHT =====
+        limelight = hardwareMap.get(Limelight3A.class, "limelight");
+        limelight.pipelineSwitch(0); // AprilTag pipeline
+        limelight.start();
+
+        telemetry.addLine("TurrentTracking Ready");
+        telemetry.addLine("LT = auto aim (LL if tag, IMU world lock if no tag)");
+        telemetry.addLine("RT = shooter (velocity based on tag distance)");
+        telemetry.addLine("LB/RB = manual turret, Y/B/X = servos");
         telemetry.update();
 
         waitForStart();
 
-        // At the start, assume goal is "straight ahead"
-        goalHeading = wrapAngle(getHeading());
-        turretTargetDegrees = 0;
+        // Initialize world lock from starting direction (optional)
+        double heading = headingFiltered;
+        double turretDeg = getTurretDeg();
+        worldTargetAngle = wrapAngle(heading + turretDeg);
+        hasWorldTarget = true;
 
         while (opModeIsActive()) {
 
-            // ================== DRIVING (GAMEPAD 1) ==================
-            // Forward/back OK, strafe fixed, turn inverted to feel normal.
-            double y = gamepad1.left_stick_y;        // forward/back
-            double x = -gamepad1.left_stick_x;       // LEFT stick left = strafe left
-            double turn = -gamepad1.right_stick_x;   // invert turn
+            // === IMU filtered heading ===
+            double rawHeading = getSignedHeading();
+            double dHead = wrapAngle(rawHeading - headingFiltered);
+            headingFiltered = wrapAngle(headingFiltered + HEADING_FILTER_ALPHA * dHead);
+            heading = headingFiltered;
 
-            double lfPower = y + x + turn;
-            double rfPower = y - x - turn;
-            double lbPower = y - x + turn;
-            double rbPower = y + x - turn;
+            // turret angle
+            turretDeg = getTurretDeg();
 
-            leftFront.setPower(lfPower);
-            rightFront.setPower(rfPower);
-            leftBack.setPower(lbPower);
-            rightBack.setPower(rbPower);
+            // === simple drive ===
+            double drive  = -gamepad1.left_stick_y;
+            double strafe =  gamepad1.left_stick_x;
+            double turn   =  gamepad1.right_stick_x;
+            driveRobot(drive, strafe, turn);
 
-            // ===== PRESET TURRET POSITIONS FOR DEBUG =====
-            // X = -90 deg, Y = +90 deg (simple way to check if turret moves at all)
-            if (gamepad1.x) {
-                turretTargetDegrees = -90;
-            } else if (gamepad1.y) {
-                turretTargetDegrees = 90;
-            }
+            // servos
+            kick1.setPosition(gamepad1.y ? KICK_FIRE_POS : KICK_REST_POS);
+            kick2.setPosition(gamepad1.b ? KICK_FIRE_POS : KICK_REST_POS);
+            kick3.setPosition(gamepad1.x ? KICK_FIRE_POS : KICK_REST_POS);
 
-            // ================== SET GOAL DIRECTION ==================
-            // Press A to say "goal is where the TURRET is looking right now"
-            if (gamepad1.a) {
-                double robotHeading = wrapAngle(getHeading());
-                double turretRelDeg = turret.getCurrentPosition() / TICKS_PER_DEGREE;
-                // world angle = robot heading + turret angle relative to robot
-                goalHeading = wrapAngle(robotHeading + turretRelDeg);
-                // keep target equal to current turret angle so it doesn't jump
-                turretTargetDegrees = turretRelDeg;
-            }
+            // === Limelight: only ID 24 ===
+            LLResult result = limelight.getLatestResult();
+            boolean hasNow = false;
+            double txNow = lastTx;
+            double areaNow = lastTargetArea;
 
-            // ================== AUTO TRACK OR MANUAL ==================
-            boolean autoTrack = gamepad1.left_trigger > 0.2;
-
-            if (autoTrack) {
-                // AUTO: turret keeps facing goal direction in field frame
-                double robotHeading = wrapAngle(getHeading());
-
-                // desired turret angle relative to robot
-                double desiredTurretRel = wrapAngle(goalHeading - robotHeading);
-                turretTargetDegrees = desiredTurretRel;
-
-                runTurretPID();
-            } else {
-                // MANUAL: bump turret using bumpers, still using PID
-                double dtTarget = getDeltaTimeForTarget();
-
-                double manualSpeedDegPerSec = 90; // how fast turret target moves with bumper held
-
-                if (gamepad1.left_bumper) {
-                    turretTargetDegrees -= manualSpeedDegPerSec * dtTarget;
-                } else if (gamepad1.right_bumper) {
-                    turretTargetDegrees += manualSpeedDegPerSec * dtTarget;
+            if (result != null && result.isValid()) {
+                List<LLResultTypes.FiducialResult> fids = result.getFiducialResults();
+                if (fids != null && !fids.isEmpty()) {
+                    for (LLResultTypes.FiducialResult fid : fids) {
+                        if (fid.getFiducialId() == TARGET_TAG_ID) {
+                            txNow = fid.getTargetXDegrees();
+                            areaNow = fid.getTargetArea();
+                            hasNow = true;
+                            break;
+                        }
+                    }
                 }
-
-                // clamp target angle to match soft limits
-                double minDeg = TURRET_MIN / TICKS_PER_DEGREE;
-                double maxDeg = TURRET_MAX / TICKS_PER_DEGREE;
-
-                if (turretTargetDegrees < minDeg) turretTargetDegrees = minDeg;
-                if (turretTargetDegrees > maxDeg) turretTargetDegrees = maxDeg;
-
-                runTurretPID();
             }
 
-            // ================== TELEMETRY ==================
-            double turretRelDegNow = turret.getCurrentPosition() / TICKS_PER_DEGREE;
+            if (hasNow) {
+                lastTx = txNow;
+                lastTargetArea = areaNow;
+                haveTargetCached = true;
+                lostTargetFrames = 0;
+            } else if (haveTargetCached && lostTargetFrames < MAX_LOST_FRAMES) {
+                lostTargetFrames++;
+            } else {
+                haveTargetCached = false;
+            }
 
-            telemetry.addData("Heading (raw)", getHeading());
-            telemetry.addData("Heading (wrapped)", wrapAngle(getHeading()));
-            telemetry.addData("Goal Heading", goalHeading);
-            telemetry.addData("Turret Target Deg (rel)", turretTargetDegrees);
-            telemetry.addData("Turret Actual Deg (rel)", turretRelDegNow);
-            telemetry.addData("Turret Pos Ticks", turret.getCurrentPosition());
-            telemetry.addData("Auto Track", autoTrack);
+            // smooth tx to reduce jitter (only when we see the tag)
+            if (hasNow) {
+                double txErr = txNow - txFiltered;
+                txFiltered += TX_FILTER_ALPHA * txErr;
+            }
+
+            // === turret control ===
+            boolean autoAim = gamepad1.left_trigger > 0.2;
+            double turretPower = 0.0;
+            String mode = "Idle";
+
+            if (autoAim) {
+                if (hasNow) {
+                    // ==== LIMELIGHT DIRECT TRACKING (SMOOTHED) ====
+                    double error = txFiltered + AIM_OFFSET_DEG;
+
+                    if (Math.abs(error) < LIMELIGHT_AIM_TOLERANCE) {
+                        turretPower = 0.0;
+                    } else {
+                        turretPower = LIMELIGHT_KP_TURN * error;
+                        if (turretPower > LIMELIGHT_MAX_TURN) turretPower = LIMELIGHT_MAX_TURN;
+                        if (turretPower < -LIMELIGHT_MAX_TURN) turretPower = -LIMELIGHT_MAX_TURN;
+                    }
+
+                    // when close to centered, capture worldTargetAngle for IMU fallback
+                    if (Math.abs(error) < 2.0) {
+                        worldTargetAngle = wrapAngle(heading + turretDeg);
+                        hasWorldTarget = true;
+                    }
+
+                    mode = "LL tracking ID24";
+
+                } else if (hasWorldTarget) {
+                    // ==== IMU WORLD LOCK (less aggressive) ====
+                    double desiredTurretDeg = wrapAngle(worldTargetAngle - heading);
+                    double errorWorld = wrapAngle(desiredTurretDeg - turretDeg);
+
+                    if (Math.abs(errorWorld) < ANGLE_DEADBAND_DEG) {
+                        turretPower = 0.0;
+                    } else {
+                        turretPower = K_AIM_WORLD * errorWorld;
+                        if (turretPower > MAX_TURRET_POWER_WORLD) turretPower = MAX_TURRET_POWER_WORLD;
+                        if (turretPower < -MAX_TURRET_POWER_WORLD) turretPower = -MAX_TURRET_POWER_WORLD;
+                    }
+
+                    mode = "IMU world lock";
+                } else {
+                    turretPower = 0.0;
+                    mode = "Auto, no lock";
+                }
+            } else {
+                // manual turret
+                double bump = 0.4;
+                if (gamepad1.left_bumper) {
+                    turretPower = -bump;
+                } else if (gamepad1.right_bumper) {
+                    turretPower = bump;
+                } else {
+                    turretPower = 0.0;
+                }
+                mode = "Manual";
+            }
+
+            turret.setPower(turretPower);
+
+            double worldNow = wrapAngle(heading + turretDeg);
+
+            // === SHOOTER VELOCITY FROM TAG "DISTANCE" ===
+            boolean shoot = gamepad1.right_trigger > 0.2;
+            if (shoot) {
+                double rpm;
+                if (haveTargetCached) {
+                    rpm = computeRpmFromArea(lastTargetArea);
+                } else {
+                    // fallback when no tag cached – tune this
+                    rpm = 3000.0;
+                }
+                rpm = clamp(rpm, MIN_RPM, MAX_RPM);
+                lastComputedRpm = rpm;
+
+                double ticksPerSecond = rpmToTicksPerSecond(rpm, TICKS_PER_REV);
+                outtake.setVelocity(ticksPerSecond);
+            } else {
+                outtake.setVelocity(0.0);
+            }
+
+            telemetry.addData("Mode", mode);
+            telemetry.addData("HeadingFilt", heading);
+            telemetry.addData("TurretDeg", turretDeg);
+            telemetry.addData("WorldNow", worldNow);
+            telemetry.addData("WorldTarget", worldTargetAngle);
+            telemetry.addData("HasWorldTarget", hasWorldTarget);
+            telemetry.addData("HasNow(ID24)", hasNow);
+            telemetry.addData("TagCached", haveTargetCached);
+            telemetry.addData("LostFrames", lostTargetFrames);
+            telemetry.addData("lastTx_raw", lastTx);
+            telemetry.addData("txFiltered", txFiltered);
+            telemetry.addData("TargetArea", lastTargetArea);
+            telemetry.addData("ShooterRPM", lastComputedRpm);
+            telemetry.addData("TurretPower", turretPower);
             telemetry.update();
         }
+
+        driveRobot(0, 0, 0);
+        turret.setPower(0.0);
+        outtake.setVelocity(0.0);
     }
 
-    // Run PID loop to drive turret toward turretTargetDegrees (relative to robot)
-    private void runTurretPID() {
-        int targetTicks = (int) (turretTargetDegrees * TICKS_PER_DEGREE);
+    // ===== helpers =====
 
-        // clamp to soft limits
-        if (targetTicks < TURRET_MIN) targetTicks = TURRET_MIN;
-        if (targetTicks > TURRET_MAX) targetTicks = TURRET_MAX;
-
-        int current = turret.getCurrentPosition();
-        double error = targetTicks - current;
-
-        double now = getRuntime();
-        double dt = now - lastTimePID;
-        if (dt <= 0) dt = 0.01;
-        lastTimePID = now;
-
-        integral += error * dt;
-        double derivative = (error - lastError) / dt;
-        lastError = error;
-
-        double power = kP * error + kI * integral + kD * derivative;
-
-        // clamp turret power so it is strong but not insane
-        double maxPower = 0.8;
-        if (power > maxPower) power = maxPower;
-        if (power < -maxPower) power = -maxPower;
-
-        // extra safety on soft limits
-        if ((current <= TURRET_MIN && power < 0) ||
-                (current >= TURRET_MAX && power > 0)) {
-            power = 0;
-        }
-
-        turret.setPower(power);
+    private double getSignedHeading() {
+        double yaw = imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
+        return HEADING_SIGN * wrapAngle(yaw);
     }
 
-    // dt for adjusting the target angle manually
-    private double getDeltaTimeForTarget() {
-        double now = getRuntime();
-        double dt = now - lastTimeTarget;
-        if (dt <= 0) dt = 0.01;
-        lastTimeTarget = now;
-        return dt;
+    private double getTurretDeg() {
+        return (turret.getCurrentPosition() / TICKS_PER_DEGREE) * TURRET_SIGN;
     }
 
-    private void resetPID() {
-        integral = 0;
-        lastError = 0;
-        lastTimePID = getRuntime();
+    private double wrapAngle(double a) {
+        while (a > 180) a -= 360;
+        while (a <= -180) a += 360;
+        return a;
     }
 
-    // Raw IMU yaw in degrees (-180 to +180)
-    private double getHeading() {
-        return imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
+    private void driveRobot(double drive, double strafe, double turn) {
+        double lf = drive + strafe + turn;
+        double rf = drive - strafe - turn;
+        double lb = drive - strafe + turn;
+        double rb = drive + strafe - turn;
+
+        double max = Math.max(1.0,
+                Math.max(Math.abs(lf),
+                        Math.max(Math.abs(rf),
+                                Math.max(Math.abs(lb), Math.abs(rb)))));
+
+        leftFront.setPower(lf / max);
+        rightFront.setPower(rf / max);
+        leftBack.setPower(lb / max);
+        rightBack.setPower(rb / max);
     }
 
-    // Wrap any angle to range (-180, 180]
-    private double wrapAngle(double angle) {
-        while (angle > 180) angle -= 360;
-        while (angle <= -180) angle += 360;
-        return angle;
+    private double clamp(double v, double lo, double hi) {
+        return Math.max(lo, Math.min(hi, v));
+    }
+
+    private double rpmToTicksPerSecond(double rpm, double tpr) {
+        return rpm * tpr / 60.0;
+    }
+
+    private double computeRpmFromArea(double area) {
+        // clamp area into [AREA_FAR, AREA_CLOSE]
+        double a = clamp(area, AREA_FAR, AREA_CLOSE);
+
+        // t = 0 → far, t = 1 → close
+        double t = (a - AREA_FAR) / (AREA_CLOSE - AREA_FAR);
+
+        // linear interpolate between FAR_RPM and CLOSE_RPM
+        return FAR_RPM + t * (CLOSE_RPM - FAR_RPM);
     }
 }
