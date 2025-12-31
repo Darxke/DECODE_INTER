@@ -123,7 +123,7 @@ public class TurrentTracking extends LinearOpMode {
         // ===== OUTTAKE =====
         outtake = hardwareMap.get(DcMotorEx.class, "outtake");
         outtake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        outtake.setDirection(DcMotorSimple.Direction.REVERSE); // flip if wrong way
+        outtake.setDirection(DcMotor.Direction.REVERSE); // flip if wrong way
         outtake.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         outtake.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
 
@@ -135,6 +135,9 @@ public class TurrentTracking extends LinearOpMode {
         kick1.setPosition(KICK_REST_POS);
         kick2.setPosition(KICK_REST_POS);
         kick3.setPosition(KICK_REST_POS);
+        kick1.setDirection(Servo.Direction.FORWARD);
+        kick2.setDirection(Servo.Direction.REVERSE);
+        kick3.setDirection(Servo.Direction.REVERSE);
 
         // ===== IMU =====
         imu = hardwareMap.get(IMU.class, "imu");

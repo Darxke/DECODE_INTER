@@ -33,8 +33,8 @@ public class colorkicktest extends LinearOpMode {
         // HARDWARE MAP
         // ---------------------------
         kickers[0] = hardwareMap.get(Servo.class, "kick1"); // kicker 1
-        kickers[2] = hardwareMap.get(Servo.class, "kick2"); // kicker 2 mapped to index 2
-        kickers[1] = hardwareMap.get(Servo.class, "kick3"); // kicker 3 mapped to index 1
+        kickers[1] = hardwareMap.get(Servo.class, "kick2"); // kicker 2 mapped to index 2
+        kickers[2] = hardwareMap.get(Servo.class, "kick3"); // kicker 3 mapped to index 1
 
         // Servo directions
         kickers[0].setDirection(Servo.Direction.FORWARD);
