@@ -29,7 +29,10 @@ public class TurrentTracking extends LinearOpMode {
     // ====== OUTTAKE (shooter) ======
     private DcMotorEx outtake;
 
-    // ====== KICKERS ======
+    // ====== INTAKE ======
+    private DcMotor intake;
+
+    // ====== KICKERS / SERVOS ======
     private Servo kick1;
     private Servo kick2;
     private Servo kick3;
@@ -39,57 +42,55 @@ public class TurrentTracking extends LinearOpMode {
 
     // ====== IMU ======
     private IMU imu;
+    private static final double HEADING_SIGN = -1.0;  // flip if heading backwards
 
-    // encoder → degrees for turret
+    // turret encoder → degrees
     private static final double TICKS_PER_DEGREE = 4.44;
     private static final double TURRET_SIGN = 1.0;   // flip to -1.0 if turret angle inverted
-    private static final double HEADING_SIGN = -1.0; // flip to 1.0 if heading feels backwards
 
     private double headingFiltered = 0.0;
-    private static final double HEADING_FILTER_ALPHA = 0.25;
+    private static final double HEADING_FILTER_ALPHA = 0.3;
 
-    // world lock: field direction turret should face when tag is lost
+    // ====== WORLD LOCK (last seen direction of the goal) ======
     private double worldTargetAngle = 0.0;
-    private boolean hasWorldTarget = false;
+    private boolean hasWorldTarget = false;   // starts false
 
-    // world-lock gains (softer to avoid shaking)
-    private static final double K_AIM_WORLD = 0.03;
-    private static final double MAX_TURRET_POWER_WORLD = 0.6;
-    private static final double ANGLE_DEADBAND_DEG = 1.5;
+    // world-lock gains (stronger again so it actually tracks)
+    private static final double K_AIM_WORLD = 0.05;
+    private static final double MAX_TURRET_POWER_WORLD = 0.7;
+    private static final double ANGLE_DEADBAND_DEG = 2.0;
 
     // ====== LIMELIGHT ======
     private Limelight3A limelight;
 
     private static final int TARGET_TAG_ID = 24;
 
-    // Softer LL PID to reduce shaking
-    private static final double LIMELIGHT_KP_TURN = 0.02;
-    private static final double LIMELIGHT_MAX_TURN = 0.5;
-    private static final double LIMELIGHT_AIM_TOLERANCE = 1.0;
+    // Limelight PID (still soft to avoid shaking)
+    private static final double LIMELIGHT_KP_TURN = 0.015;
+    private static final double LIMELIGHT_MAX_TURN = 0.6;
+    private static final double LIMELIGHT_AIM_TOLERANCE = 2.0; // bigger deadband
 
-    // offset for camera vs shooter. Leave 0 while we debug.
-    private static final double AIM_OFFSET_DEG = 0.0;
+    // camera-to-shooter offset in degrees
+    // negative = bias to the RIGHT. You said it aims left, so we shove more right.
+    private static final double AIM_OFFSET_DEG = -7.0;
 
+    // low-pass filter for tx
     private double lastTx = 0.0;
-    private double txFiltered = 0.0;          // low-pass filtered tx
+    private double txFiltered = 0.0;
     private static final double TX_FILTER_ALPHA = 0.3;
-
-    private boolean haveTargetCached = false;
-    private int lostTargetFrames = 0;
-    private static final int MAX_LOST_FRAMES = 10;
 
     // ====== SHOOTER DISTANCE → RPM ======
     private static final double TICKS_PER_REV = 28.0;   // goBILDA 435rpm motor
     private static final double MIN_RPM = 0.0;
     private static final double MAX_RPM = 6000.0;
 
-    // tune these based on what actually scores
-    private static final double FAR_RPM   = 3500.0;  // when tag is small / far
-    private static final double CLOSE_RPM = 2500.0;  // when tag is big / close
+    // new request: very weak close, stronger far
+    private static final double FAR_RPM   = 3750.0;  // far shot
+    private static final double CLOSE_RPM = 1000.0;  // close shot
 
-    // rough guess for Limelight targetArea (%) range, you will tune this
-    private static final double AREA_FAR   = 1.0;    // small area = far
-    private static final double AREA_CLOSE = 10.0;   // big area = close
+    // rough LL area range
+    private static final double AREA_FAR   = 1.0;
+    private static final double AREA_CLOSE = 8.0;
 
     private double lastTargetArea = 0.0;
     private double lastComputedRpm = 0.0;
@@ -123,21 +124,20 @@ public class TurrentTracking extends LinearOpMode {
         // ===== OUTTAKE =====
         outtake = hardwareMap.get(DcMotorEx.class, "outtake");
         outtake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        outtake.setDirection(DcMotor.Direction.REVERSE); // flip if wrong way
+        outtake.setDirection(DcMotorSimple.Direction.REVERSE); // flip if wrong way
         outtake.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         outtake.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+
+        // ===== INTAKE =====
+        intake = hardwareMap.get(DcMotor.class, "intake");
+        intake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        intake.setDirection(DcMotorSimple.Direction.FORWARD); // flip if needed
 
         // ===== KICKERS =====
         kick1 = hardwareMap.get(Servo.class, "kick1");
         kick2 = hardwareMap.get(Servo.class, "kick2");
         kick3 = hardwareMap.get(Servo.class, "kick3");
 
-        kick1.setPosition(KICK_REST_POS);
-        kick2.setPosition(KICK_REST_POS);
-        kick3.setPosition(KICK_REST_POS);
-        kick1.setDirection(Servo.Direction.FORWARD);
-        kick2.setDirection(Servo.Direction.REVERSE);
-        kick3.setDirection(Servo.Direction.REVERSE);
 
         // ===== IMU =====
         imu = hardwareMap.get(IMU.class, "imu");
@@ -149,19 +149,13 @@ public class TurrentTracking extends LinearOpMode {
         limelight.pipelineSwitch(0); // AprilTag pipeline
         limelight.start();
 
-        telemetry.addLine("TurrentTracking Ready");
-        telemetry.addLine("LT = auto aim (LL if tag, IMU world lock if no tag)");
-        telemetry.addLine("RT = shooter (velocity based on tag distance)");
-        telemetry.addLine("LB/RB = manual turret, Y/B/X = servos");
+        telemetry.addLine("TurrentTracking (LL + IMU world lock + distance shooter)");
+        telemetry.addLine("Hold LT = track ID 24; when lost, aim last world angle (after first lock)");
+        telemetry.addLine("Hold RT = shooter (velocity from tag distance)");
+        telemetry.addLine("A = intake, LB/RB = manual turret, Y/B/X = servos");
         telemetry.update();
 
         waitForStart();
-
-        // Initialize world lock from starting direction (optional)
-        double heading = headingFiltered;
-        double turretDeg = getTurretDeg();
-        worldTargetAngle = wrapAngle(heading + turretDeg);
-        hasWorldTarget = true;
 
         while (opModeIsActive()) {
 
@@ -169,25 +163,29 @@ public class TurrentTracking extends LinearOpMode {
             double rawHeading = getSignedHeading();
             double dHead = wrapAngle(rawHeading - headingFiltered);
             headingFiltered = wrapAngle(headingFiltered + HEADING_FILTER_ALPHA * dHead);
-            heading = headingFiltered;
+            double heading = headingFiltered;
 
             // turret angle
-            turretDeg = getTurretDeg();
+            double turretDeg = getTurretDeg();
 
-            // === simple drive ===
+            // === drive ===
             double drive  = -gamepad1.left_stick_y;
             double strafe =  gamepad1.left_stick_x;
             double turn   =  gamepad1.right_stick_x;
             driveRobot(drive, strafe, turn);
 
-            // servos
-            kick1.setPosition(gamepad1.y ? KICK_FIRE_POS : KICK_REST_POS);
-            kick2.setPosition(gamepad1.b ? KICK_FIRE_POS : KICK_REST_POS);
-            kick3.setPosition(gamepad1.x ? KICK_FIRE_POS : KICK_REST_POS);
+            // intake on A
+            intake.setPower(gamepad1.a ? 1.0 : 0.0);
 
-            // === Limelight: only ID 24 ===
+            // servos
+            kick1.setPosition(gamepad1.y ? 1: KICK_REST_POS);
+            // B servo flipped: default FIRE, press B → REST
+            kick2.setPosition(gamepad1.b ? 0.3 : KICK_FIRE_POS);
+            kick3.setPosition(gamepad1.x ? 0.1 : 0.9);
+
+            // === Limelight: STRICTLY ID 24 ===
             LLResult result = limelight.getLatestResult();
-            boolean hasNow = false;
+            boolean hasTag24Now = false;
             double txNow = lastTx;
             double areaNow = lastTargetArea;
 
@@ -198,28 +196,24 @@ public class TurrentTracking extends LinearOpMode {
                         if (fid.getFiducialId() == TARGET_TAG_ID) {
                             txNow = fid.getTargetXDegrees();
                             areaNow = fid.getTargetArea();
-                            hasNow = true;
+                            hasTag24Now = true;
                             break;
                         }
                     }
                 }
             }
 
-            if (hasNow) {
+            if (hasTag24Now) {
                 lastTx = txNow;
                 lastTargetArea = areaNow;
-                haveTargetCached = true;
-                lostTargetFrames = 0;
-            } else if (haveTargetCached && lostTargetFrames < MAX_LOST_FRAMES) {
-                lostTargetFrames++;
-            } else {
-                haveTargetCached = false;
-            }
 
-            // smooth tx to reduce jitter (only when we see the tag)
-            if (hasNow) {
+                // smooth tx
                 double txErr = txNow - txFiltered;
                 txFiltered += TX_FILTER_ALPHA * txErr;
+
+                // ALWAYS update worldTargetAngle when we see the tag
+                worldTargetAngle = wrapAngle(heading + turretDeg);
+                hasWorldTarget = true;
             }
 
             // === turret control ===
@@ -228,8 +222,8 @@ public class TurrentTracking extends LinearOpMode {
             String mode = "Idle";
 
             if (autoAim) {
-                if (hasNow) {
-                    // ==== LIMELIGHT DIRECT TRACKING (SMOOTHED) ====
+                if (hasTag24Now) {
+                    // ==== LIMELIGHT DIRECT TRACKING ON ID 24 ====
                     double error = txFiltered + AIM_OFFSET_DEG;
 
                     if (Math.abs(error) < LIMELIGHT_AIM_TOLERANCE) {
@@ -240,18 +234,12 @@ public class TurrentTracking extends LinearOpMode {
                         if (turretPower < -LIMELIGHT_MAX_TURN) turretPower = -LIMELIGHT_MAX_TURN;
                     }
 
-                    // when close to centered, capture worldTargetAngle for IMU fallback
-                    if (Math.abs(error) < 2.0) {
-                        worldTargetAngle = wrapAngle(heading + turretDeg);
-                        hasWorldTarget = true;
-                    }
-
                     mode = "LL tracking ID24";
 
                 } else if (hasWorldTarget) {
-                    // ==== IMU WORLD LOCK (less aggressive) ====
-                    double desiredTurretDeg = wrapAngle(worldTargetAngle - heading);
-                    double errorWorld = wrapAngle(desiredTurretDeg - turretDeg);
+                    // ==== IMU WORLD LOCK WHEN TAG IS LOST ====
+                    double turretWorldNow = wrapAngle(heading + turretDeg);
+                    double errorWorld = wrapAngle(worldTargetAngle - turretWorldNow);
 
                     if (Math.abs(errorWorld) < ANGLE_DEADBAND_DEG) {
                         turretPower = 0.0;
@@ -264,7 +252,7 @@ public class TurrentTracking extends LinearOpMode {
                     mode = "IMU world lock";
                 } else {
                     turretPower = 0.0;
-                    mode = "Auto, no lock";
+                    mode = "Auto, no lock yet";
                 }
             } else {
                 // manual turret
@@ -287,11 +275,11 @@ public class TurrentTracking extends LinearOpMode {
             boolean shoot = gamepad1.right_trigger > 0.2;
             if (shoot) {
                 double rpm;
-                if (haveTargetCached) {
+                if (lastTargetArea > 0.001) {
                     rpm = computeRpmFromArea(lastTargetArea);
                 } else {
-                    // fallback when no tag cached – tune this
-                    rpm = 3000.0;
+                    // fallback when no tag info
+                    rpm = 2200.0;
                 }
                 rpm = clamp(rpm, MIN_RPM, MAX_RPM);
                 lastComputedRpm = rpm;
@@ -308,9 +296,7 @@ public class TurrentTracking extends LinearOpMode {
             telemetry.addData("WorldNow", worldNow);
             telemetry.addData("WorldTarget", worldTargetAngle);
             telemetry.addData("HasWorldTarget", hasWorldTarget);
-            telemetry.addData("HasNow(ID24)", hasNow);
-            telemetry.addData("TagCached", haveTargetCached);
-            telemetry.addData("LostFrames", lostTargetFrames);
+            telemetry.addData("HasTag24Now", hasTag24Now);
             telemetry.addData("lastTx_raw", lastTx);
             telemetry.addData("txFiltered", txFiltered);
             telemetry.addData("TargetArea", lastTargetArea);
@@ -322,6 +308,7 @@ public class TurrentTracking extends LinearOpMode {
         driveRobot(0, 0, 0);
         turret.setPower(0.0);
         outtake.setVelocity(0.0);
+        intake.setPower(0.0);
     }
 
     // ===== helpers =====
@@ -367,13 +354,8 @@ public class TurrentTracking extends LinearOpMode {
     }
 
     private double computeRpmFromArea(double area) {
-        // clamp area into [AREA_FAR, AREA_CLOSE]
         double a = clamp(area, AREA_FAR, AREA_CLOSE);
-
-        // t = 0 → far, t = 1 → close
         double t = (a - AREA_FAR) / (AREA_CLOSE - AREA_FAR);
-
-        // linear interpolate between FAR_RPM and CLOSE_RPM
         return FAR_RPM + t * (CLOSE_RPM - FAR_RPM);
     }
 }
