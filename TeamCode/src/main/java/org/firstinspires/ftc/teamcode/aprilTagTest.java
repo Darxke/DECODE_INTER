@@ -27,7 +27,7 @@ public class aprilTagTest extends LinearOpMode {
     private Limelight3A limelight;
 
     // ================= CONSTANTS =================
-    private static final double KICK_REST = 0.125;
+    private static final double KICK_REST = 0.1;
     private static final double KICK_FIRE = 0.75;
     private static final long KICK_TIME_MS = 140;
 
@@ -113,10 +113,9 @@ public class aprilTagTest extends LinearOpMode {
 
             // ===== START SHOOTING =====
             if (shootState == ShootState.IDLE &&
-                    gamepad1.right_trigger > 0.2 &&
+                    gamepad1.x &&
                     lockedTargetPattern != null &&
-                    ballCount == 3 &&
-                    patternMatches(lockedTargetPattern)) {
+                    ballCount == 3 ) {
 
                 shootState = ShootState.FIRE_1;
                 stateStartTime = System.currentTimeMillis();
