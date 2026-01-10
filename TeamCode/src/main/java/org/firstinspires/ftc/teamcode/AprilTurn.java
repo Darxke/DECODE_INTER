@@ -48,7 +48,7 @@ public class AprilTurn extends LinearOpMode {
     private Limelight3A limelight;
 
     // LIMELIGHT TURNING CONSTANTS
-    private static final double LIMELIGHT_KP_TURN = 0.02;
+    static final double LIMELIGHT_KP_TURN = 0.02;
     private static final double LIMELIGHT_MAX_TURN = 0.4;
     private static final double LIMELIGHT_AIM_TOLERANCE = 1.5;
 
