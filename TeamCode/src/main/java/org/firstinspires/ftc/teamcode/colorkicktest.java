@@ -135,16 +135,15 @@ public class colorkicktest extends LinearOpMode {
         float val = hsv[2];
 
         // Relaxed thresholds for low light / purple detection
-        if (sat < 0.25 || val < 0.15) return BallColor.NONE;
-
+        if (r + g + b < 20) return colorkicktest.BallColor.NONE;
         // Reject red
         if ((hue >= 0 && hue <= 25) || (hue >= 330 && hue <= 360)) return BallColor.NONE;
 
         // Green threshold
-        if (hue >= 95 && hue <= 145) return BallColor.GREEN;
+        if (hue >= 25 && hue <= 150) return colorkicktest.BallColor.GREEN;
 
-        // Purple threshold widened aggressively
-        if (hue >= 240 && hue <= 340) return BallColor.PURPLE;
+        // PURPLE (expanded range for better detection on first kicker)
+        if ((hue >= 160 && hue <= 270) || (hue >= 290 && hue <= 360)) return colorkicktest.BallColor.PURPLE;
 
         return BallColor.NONE;
     }
