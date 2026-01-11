@@ -19,16 +19,6 @@ import java.util.List;
 @TeleOp(name = "TurrentTracking", group = "Test")
 public class TurrentTracking extends LinearOpMode {
 
-    // Declare the filtered tx variable
-    private double txFiltered = 0.0;  // Initialize the filtered tx value
-
-    // Declare the filter strength for tx filtering
-    private static final double TX_FILTER_ALPHA = 0.50;  // Increased filtering to smooth out the tx value
-
-    // Declare the aiming offset for turret bias (increased to shift to the right)
-    private static final double AIM_OFFSET_DEG_FAR = 2.0; // Right shift for far shots
-    private static final double AIM_OFFSET_DEG_CLOSE = 1.0; // Slightly reduced bias for close shots
-
     // ====== DRIVE ======
     private DcMotor leftFront, rightFront, leftBack, rightBack;
 
@@ -44,43 +34,57 @@ public class TurrentTracking extends LinearOpMode {
     // ====== SERVOS ======
     private Servo kick1, kick2, kick3;
 
-    private static final double KICK_REST_POS = 0.0;
-    private static final double KICK_FIRE_POS = 1.0;
-
     // ====== IMU ======
     private IMU imu;
-    private static final double HEADING_SIGN = -1.0; // flip if heading feels backwards
-
+    private static final double HEADING_SIGN = -1.0;
     private double headingFiltered = 0.0;
     private static final double HEADING_FILTER_ALPHA = 0.30;
 
     // ====== TURRET ENCODER → DEGREES ======
     private static final double TICKS_PER_DEGREE = 4.44;
-    private static final double TURRET_SIGN = 1.0; // flip to -1.0 if turret angle inverted
+    private static final double TURRET_SIGN = 1.0;
 
     // ====== WORLD LOCK (IMU fallback) ======
     private double worldTargetAngle = 0.0;
     private boolean hasWorldTarget = false;
 
-    private static final double K_AIM_WORLD = 0.06;
-    private static final double MAX_TURRET_POWER_WORLD = 0.75;
-    private static final double ANGLE_DEADBAND_DEG = 2.0;
+    private static final double K_AIM_WORLD = 0.10;
+    private static final double MAX_TURRET_POWER_WORLD = 0.60;
+    private static final double ANGLE_DEADBAND_DEG = 0.6;
+    private static final double WORLD_MIN_POWER = 0.07;
 
     // ====== LIMELIGHT ======
     private Limelight3A limelight;
     private static final int TARGET_TAG_ID = 24;
 
-    // Limelight PID Control constants (smaller KP for smoother movement)
-    private static final double LIMELIGHT_KP_TURN_FAR = 0.02;  // Far shot adjustment (higher sensitivity)
-    private static final double LIMELIGHT_KP_TURN_CLOSE = 0.01; // Close shot adjustment (lower sensitivity)
-    private static final double LIMELIGHT_KI_TURN = 0.0;   // Integral constant (not used in this case)
-    private static final double LIMELIGHT_KD_TURN = 0.0;   // Derivative constant (not used in this case)
-    private static final double LIMELIGHT_MAX_TURN = 0.70;  // Max turn power
+    // Tracking gains (calmer than before)
+    private static final double LIMELIGHT_KP_TURN_FAR = 0.012;
+    private static final double LIMELIGHT_KP_TURN_CLOSE = 0.009;
+    private static final double LIMELIGHT_KD = 0.010;
+    private static final double LIMELIGHT_MAX_TURN = 0.75;
 
-    private static final double LIMELIGHT_AIM_TOLERANCE = 2.0; // Tolerance for aiming
+    private static final double LIMELIGHT_AIM_TOLERANCE = 0.50;
+    private static final double TURRET_MIN_POWER = 0.04;
+
+    // Negative = aim RIGHT, Positive = aim LEFT
+    private static final double AIM_OFFSET_DEG_FAR = -5.0;
+    private static final double AIM_OFFSET_DEG_CLOSE = -5.0; // was -3.0, now 2° more right
+
+    // tx filtering (less lag, less twitch)
+    private double txFiltered = 0.0;
+    private static final double TX_FILTER_ALPHA = 0.45;
+    private double lastTx = 0.0;
+    private boolean hadTagLastLoop = false;
+
+    // PD state
+    private double prevAimError = 0.0;
+
+    // Slew limiting to kill shake
+    private double lastTurretPower = 0.0;
+    private static final double TURRET_SLEW_PER_LOOP = 0.06; // max change per loop
 
     // ====== SHOOTER (pose-based distance → RPM) ======
-    private static final double TICKS_PER_REV = 28.0; // goBILDA commonly 28
+    private static final double TICKS_PER_REV = 28.0;
     private static final double G = 9.80665;
 
     private static final double RPM_MIN = 600;
@@ -92,30 +96,17 @@ public class TurrentTracking extends LinearOpMode {
     private static final double GOAL_ENTRY_IN = 43.0;
     private static final double SHOOTER_ANGLE_DEG = 60.0;
 
-    // Lower = commands MORE rpm (stronger).
     private static final double SHOOTER_EFF = 0.55;
 
-    // ====== LIVE TUNE RPM SCALE ======
     private double rpmScale = 1.68;
 
-    // last known distance (inches) from pose, for when tag flickers
     private double lastDistanceIn = 0.0;
     private double lastRpmCmd = 0.0;
 
-    // debug: what ID did we actually use this frame?
     private int lastUsedFiducialId = -1;
 
-    // dpad edge detect
     private boolean lastDpadUp = false;
     private boolean lastDpadDown = false;
-
-    // Define close and far power scaling factors
-    private static final double FAR_RPM_SCALE = 1.68;
-    private static final double CLOSE_RPM_SCALE = 1.45; // Adjust this value to make close shots weaker
-
-    // PID variables for turret aiming
-    private double previousError = 0.0;  // Previous error for derivative calculation
-    private double integral = 0.0;       // Integral term (used for error accumulation)
 
     @Override
     public void runOpMode() throws InterruptedException {
@@ -167,28 +158,23 @@ public class TurrentTracking extends LinearOpMode {
 
         // ===== LIMELIGHT =====
         limelight = hardwareMap.get(Limelight3A.class, "limelight");
-        limelight.pipelineSwitch(0); // pipeline 0 must be AprilTags
+        limelight.pipelineSwitch(0);
         limelight.start();
 
-        telemetry.addLine("TurrentTracking: ID24 only");
-        telemetry.addLine("LT aim | Lost tag -> IMU world lock");
-        telemetry.addLine("RT shoot | A intake | Y/B/X servos");
-        telemetry.addLine("DpadUp/Down = RPM scale (hold DpadLeft for bigger steps)");
+        telemetry.addLine("LT = aim, RT = shoot (only w/tag), RB = slow drive");
         telemetry.update();
 
         waitForStart();
 
         while (opModeIsActive()) {
 
-            // ===== LIVE RPM SCALE TUNING (edge-based) =====
+            // ===== LIVE RPM SCALE TUNING =====
             boolean dUp = gamepad1.dpad_up;
             boolean dDown = gamepad1.dpad_down;
-
-            double step = gamepad1.dpad_left ? 0.10 : 0.02; // big vs small steps
+            double step = gamepad1.dpad_left ? 0.10 : 0.02;
 
             if (dUp && !lastDpadUp) rpmScale += step;
             if (dDown && !lastDpadDown) rpmScale -= step;
-
             rpmScale = clamp(rpmScale, 0.50, 3.00);
 
             lastDpadUp = dUp;
@@ -204,17 +190,23 @@ public class TurrentTracking extends LinearOpMode {
 
             // ===== drive =====
             double drive  = -gamepad1.left_stick_y;
-            double strafe =  gamepad1.left_stick_x;
+            double strafe =  gamepad1.left_stick_x;  // FIXED: no invert
             double turn   =  gamepad1.right_stick_x;
+
+            if (gamepad1.right_bumper) {
+                drive *= 0.5;
+                strafe *= 0.5;
+                turn *= 0.5;
+            }
             driveRobot(drive, strafe, turn);
 
             // ===== intake =====
             intake.setPower(gamepad1.a ? 1.0 : 0.0);
 
-            // ===== servos (your exact mapping) =====
-            kick1.setPosition(gamepad1.y ? 0.7: 0.1);
-            kick2.setPosition(gamepad1.b ? 0.2 : 0.95);  // Adjusted kicking position
-            kick3.setPosition(gamepad1.x ? 0.45 : 1);
+            // ===== kickers =====
+            kick1.setPosition(gamepad1.y ? 0.7 : 0.1);
+            kick2.setPosition(gamepad1.b ? 0.2 : 0.95);
+            kick3.setPosition(gamepad1.x ? 0.45 : 1.0);
 
             // ===== Limelight: ONLY ID 24 =====
             LLResult result = limelight.getLatestResult();
@@ -229,115 +221,121 @@ public class TurrentTracking extends LinearOpMode {
                     for (LLResultTypes.FiducialResult fid : fids) {
                         int id = fid.getFiducialId();
                         if (id == TARGET_TAG_ID) {
+                            usedId = id;
                             hasTag24Now = true;
 
                             txNow = fid.getTargetXDegrees();
+                            if (Math.abs(txNow) > 30.0) { hasTag24Now = false; break; }
 
                             Pose3D pose = fid.getRobotPoseTargetSpace();
                             double zMeters = Math.abs(pose.getPosition().z);
                             distInNow = zMeters * 39.3701;
-
                             break;
                         }
                     }
                 }
             }
-
             lastUsedFiducialId = usedId;
 
             if (hasTag24Now) {
                 lastDistanceIn = distInNow;
 
-                // tx filter
-                txFiltered += TX_FILTER_ALPHA * (txNow - txFiltered);
+                if (!hadTagLastLoop) {
+                    txFiltered = txNow;
+                    prevAimError = 0.0;
+                } else {
+                    txFiltered += TX_FILTER_ALPHA * (txNow - txFiltered);
+                }
+                lastTx = txFiltered;
 
-                // Update world lock every time we see ID24
-                worldTargetAngle = wrapAngle(heading + turretDeg);
+                worldTargetAngle = wrapAngle(heading + wrapAngle(turretDeg));
                 hasWorldTarget = true;
+            } else {
+                txFiltered = lastTx;
             }
+            hadTagLastLoop = hasTag24Now;
 
             // ===== turret control =====
             boolean autoAim = gamepad1.left_trigger > 0.2;
-            double turretPower = 0.0;
+            double turretPowerCmd = 0.0;
             String mode;
 
             if (autoAim) {
                 if (hasTag24Now) {
-                    double error = txFiltered + (lastDistanceIn > 24 ? AIM_OFFSET_DEG_FAR : AIM_OFFSET_DEG_CLOSE);
+                    double offset = (lastDistanceIn > 24.0) ? AIM_OFFSET_DEG_FAR : AIM_OFFSET_DEG_CLOSE;
+                    double error = txFiltered + offset;
+                    double absE = Math.abs(error);
 
-                    // PID control
-                    integral += error;
-                    double derivative = error - previousError;
-                    turretPower = LIMELIGHT_KP_TURN_FAR * error + LIMELIGHT_KI_TURN * integral + LIMELIGHT_KD_TURN * derivative;
+                    double kp = (lastDistanceIn > 24.0) ? LIMELIGHT_KP_TURN_FAR : LIMELIGHT_KP_TURN_CLOSE;
 
-                    // Store previous error for next iteration
-                    previousError = error;
+                    if (absE <= LIMELIGHT_AIM_TOLERANCE) {
+                        turretPowerCmd = 0.0;
+                    } else {
+                        double dErr = error - prevAimError;
+                        prevAimError = error;
 
-                    // If error is within tolerance, stop moving turret
-                    if (Math.abs(error) < LIMELIGHT_AIM_TOLERANCE) {
-                        turretPower = 0.0;
+                        turretPowerCmd = (kp * error) - (LIMELIGHT_KD * dErr);
+                        turretPowerCmd = clamp(turretPowerCmd, -LIMELIGHT_MAX_TURN, LIMELIGHT_MAX_TURN);
+
+                        if (turretPowerCmd > 0) turretPowerCmd = Math.max(turretPowerCmd,  TURRET_MIN_POWER);
+                        else                    turretPowerCmd = Math.min(turretPowerCmd, -TURRET_MIN_POWER);
                     }
 
-                    turretPower = clamp(turretPower, -LIMELIGHT_MAX_TURN, LIMELIGHT_MAX_TURN);
-                    mode = "LL tracking ID24 (PID)";
+                    mode = "LL tracking";
                 } else if (hasWorldTarget) {
-                    double turretWorldNow = wrapAngle(heading + turretDeg);
+                    double turretWorldNow = wrapAngle(heading + wrapAngle(turretDeg));
                     double errorWorld = wrapAngle(worldTargetAngle - turretWorldNow);
 
-                    if (Math.abs(errorWorld) < ANGLE_DEADBAND_DEG) {
-                        turretPower = 0.0;
+                    if (Math.abs(errorWorld) <= ANGLE_DEADBAND_DEG) {
+                        turretPowerCmd = 0.0;
+                        mode = "World lock";
                     } else {
-                        turretPower = K_AIM_WORLD * errorWorld;
-                        turretPower = clamp(turretPower, -MAX_TURRET_POWER_WORLD, MAX_TURRET_POWER_WORLD);
-                    }
+                        turretPowerCmd = K_AIM_WORLD * errorWorld;
+                        turretPowerCmd = clamp(turretPowerCmd, -MAX_TURRET_POWER_WORLD, MAX_TURRET_POWER_WORLD);
 
-                    mode = "IMU world lock";
+                        if (turretPowerCmd > 0) turretPowerCmd = Math.max(turretPowerCmd,  WORLD_MIN_POWER);
+                        else                    turretPowerCmd = Math.min(turretPowerCmd, -WORLD_MIN_POWER);
+
+                        mode = "World lock";
+                    }
                 } else {
-                    turretPower = 0.0;
-                    mode = "Auto, no lock yet";
+                    turretPowerCmd = 0.0;
+                    mode = "Auto no lock";
                 }
             } else {
-                double bump = 0.4;
-                if (gamepad1.left_bumper) turretPower = -bump;
-                else if (gamepad1.right_bumper) turretPower = bump;
-                else turretPower = 0.0;
-
+                double bump = 0.6;
+                if (gamepad1.left_bumper) turretPowerCmd = -bump;
+                else if (gamepad1.right_bumper) turretPowerCmd = bump;
+                else turretPowerCmd = 0.0;
                 mode = "Manual";
             }
 
+            // ===== Slew limit (kills shake) =====
+            double lo = lastTurretPower - TURRET_SLEW_PER_LOOP;
+            double hi = lastTurretPower + TURRET_SLEW_PER_LOOP;
+            double turretPower = clamp(turretPowerCmd, lo, hi);
+            lastTurretPower = turretPower;
+
             turret.setPower(turretPower);
 
-            // ===== shooter velocity from pose distance =====
+            // ===== shooter =====
             boolean shoot = gamepad1.right_trigger > 0.2;
-            if (shoot && hasTag24Now) {  // Only shoot when the tag is detected
+            if (shoot && hasTag24Now) {
                 double rpm = computeRpmFromDistanceInches(lastDistanceIn, rpmScale);
-                // Adjust based on the distance:
-                if (lastDistanceIn > 24) {  // Example: Far shot
-                    rpmScale = FAR_RPM_SCALE;
-                } else {  // Close shot
-                    rpmScale = CLOSE_RPM_SCALE;
-                }
-                rpm = computeRpmFromDistanceInches(lastDistanceIn, rpmScale);
                 rpm = clamp(rpm, RPM_MIN, RPM_MAX);
                 lastRpmCmd = rpm;
-
-                double ticksPerSec = rpmToTicksPerSecond(rpm, TICKS_PER_REV);
-                outtake.setVelocity(ticksPerSec);
+                outtake.setVelocity(rpmToTicksPerSecond(rpm, TICKS_PER_REV));
             } else {
-                outtake.setVelocity(0.0);  // Stop shooter when trigger is not pressed or tag is not visible
+                outtake.setVelocity(0.0);
             }
 
-            // ===== telemetry =====
             telemetry.addData("Mode", mode);
-            telemetry.addData("UsedFiducialId", lastUsedFiducialId);
-            telemetry.addData("HasTag24Now", hasTag24Now);
-            telemetry.addData("txFiltered", txFiltered);
-            telemetry.addData("DistIn (pose Z)", lastDistanceIn);
-
-            telemetry.addData("RPM_SCALE", rpmScale);
-            telemetry.addData("RPM cmd", lastRpmCmd);
-
-            telemetry.addData("TurretPower", turretPower);
+            telemetry.addData("HasTag", hasTag24Now);
+            telemetry.addData("txNow", txNow);
+            telemetry.addData("txF", txFiltered);
+            telemetry.addData("DistIn", lastDistanceIn);
+            telemetry.addData("TurretP", turretPower);
+            telemetry.addData("UsedId", lastUsedFiducialId);
             telemetry.update();
         }
 
@@ -359,14 +357,11 @@ public class TurrentTracking extends LinearOpMode {
         double denom = (x * tan) - dy;
         if (denom <= 0.001) return RPM_MAX;
 
-        // required BALL exit speed (m/s)
         double v = Math.sqrt((G * x * x) / (2.0 * cos * cos * denom));
 
-        // wheel circumference
         double wheelDiamM = WHEEL_DIAMETER_IN * 0.0254;
         double wheelCircM = Math.PI * wheelDiamM;
 
-        // convert to wheel rpm + tuning scale
         double wheelRps = (v / wheelCircM) / SHOOTER_EFF;
         double rpm = wheelRps * 60.0;
 
