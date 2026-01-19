@@ -26,8 +26,8 @@ public class aprilTagTest extends LinearOpMode {
 
     private static final double OUTTAKE_VELOCITY = 1300;
 
-    private static final double[] KICK_FIRE = {0.7, 0.35, 0.45};
-    private static final double[] KICK_REST = {0.1, 0.95, 1.0};
+    private static final double[] KICK_FIRE = {0.7, 0.95, 0.45};
+    private static final double[] KICK_REST = {0.1, 0, 1.0};
 
     // Timings (~1 second per ball)
     private static final long KICK_DELAY_MS = 350;         // Up / Down
@@ -166,7 +166,16 @@ public class aprilTagTest extends LinearOpMode {
             telemetry.addData("Shoot Index", shootIndex);
             telemetry.addData("Shoot State", shootState);
             telemetry.addData("Active Kicker", activeKicker);
+            telemetry.addLine("---- HSV DEBUG ----");
 
+            telemetry.addData("K1 Sensor A", hsvString(sensors[0]));
+            telemetry.addData("K1 Sensor B", hsvString(sensors[1]));
+
+            telemetry.addData("K2 Sensor A", hsvString(sensors[2]));
+            telemetry.addData("K2 Sensor B", hsvString(sensors[3]));
+
+            telemetry.addData("K3 Sensor A", hsvString(sensors[4]));
+            telemetry.addData("K3 Sensor B", hsvString(sensors[5]));
             telemetry.update();
         }
     }
@@ -184,7 +193,19 @@ public class aprilTagTest extends LinearOpMode {
         }
         return -1;
     }
+    private String hsvString(ColorSensor sensor) {
+        int r = sensor.red();
+        int g = sensor.green();
+        int b = sensor.blue();
 
+        float[] hsv = new float[3];
+        android.graphics.Color.RGBToHSV(r, g, b, hsv);
+
+        return String.format(
+                "H:%.1f S:%.2f V:%.2f",
+                hsv[0], hsv[1], hsv[2]
+        );
+    }
     private BallColor detectColor(ColorSensor sensor) {
         int r = sensor.red();
         int g = sensor.green();

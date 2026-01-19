@@ -205,8 +205,9 @@ public class TurrentTracking extends LinearOpMode {
 
             // ===== kickers =====
             kick1.setPosition(gamepad1.y ? 0.7 : 0.1);
-            kick2.setPosition(gamepad1.b ? 0.2 : 0.95);
+            kick2.setPosition(gamepad1.b ? 1 : 0);
             kick3.setPosition(gamepad1.x ? 0.45 : 1.0);
+
 
             // ===== Limelight: ONLY ID 24 =====
             LLResult result = limelight.getLatestResult();
