@@ -69,9 +69,9 @@ public final class MecanumDrive {
         public double kV = 0.00018488240321071147;
         public double kA = 0.0001;
 
-        public double maxWheelVel = 80;
+        public double maxWheelVel = 120;
         public double minProfileAccel = -30;
-        public double maxProfileAccel = 70;
+        public double maxProfileAccel = 100;
 
         public double maxAngVel = Math.PI;
         public double maxAngAccel = Math.PI;
