@@ -140,37 +140,24 @@ public class TurrentTracking extends LinearOpMode {
         }
     }
 
-    // ---------------- TY DISTANCE -> RPM SCALE ----------------
     private double getRpmScaleForDistance(LLResult result) {
-        // If Limelight is invalid, keep last-known mode (don’t silently default to close)
         if (result == null || !result.isValid()) {
             return farMode ? RPM_SCALE_FAR : RPM_SCALE_CLOSE;
         }
 
-        // Use abs(ty) as distance metric
         double ty;
         try {
             ty = Math.abs(result.getTy());
         } catch (Exception e) {
-            // If SDK doesn't support getTy(), fail safe to last mode
             return farMode ? RPM_SCALE_FAR : RPM_SCALE_CLOSE;
         }
 
-        // ASSUMPTION: farther => larger abs(ty)
-        // Enter FAR when ty > TY_FAR_ENTER
-        // Exit FAR when ty < TY_FAR_EXIT
-        //
-        // If your camera behaves opposite (far => smaller abs(ty)),
-        // FLIP the comparisons like this:
-        //   enter FAR when ty < TY_FAR_EXIT
-        //   exit FAR  when ty > TY_FAR_ENTER
 
         if (!farMode && ty > TY_FAR_ENTER) farMode = true;
         else if (farMode && ty < TY_FAR_EXIT) farMode = false;
 
         return farMode ? RPM_SCALE_FAR : RPM_SCALE_CLOSE;
     }
-    // --------------------------------------------------------
 
     private void fireKickerOG(int idx) {
         // --- FIXED MAPPING ---
@@ -198,13 +185,10 @@ public class TurrentTracking extends LinearOpMode {
     }
 
     private int findKickerForColor(BallColor target) {
-        // Kicker 1 Logic (Sensors 0, 1)
         if (getBallColor(sensors[0]) == target || getBallColor(sensors[1]) == target) return 0;
 
-        // Kicker 2 Logic (Physical slot 3 sensors: 4, 5)
         if (getBallColor(sensors[4]) == target || getBallColor(sensors[5]) == target) return 2;
 
-        // Kicker 3 Logic (Physical slot 2 sensors: 2, 3)
         if (getBallColor(sensors[2]) == target || getBallColor(sensors[3]) == target) return 1;
 
         return -1;
