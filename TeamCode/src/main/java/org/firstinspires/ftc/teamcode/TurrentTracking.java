@@ -13,7 +13,7 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.Servo;
 import java.util.List;
 
-@TeleOp(name = "Turret_AutoMatch_V58", group = "Production")
+@TeleOp(name = "Turret_Production_V67", group = "Production")
 public class TurrentTracking extends LinearOpMode {
 
     private final int TARGET_ID = 24;
@@ -42,21 +42,20 @@ public class TurrentTracking extends LinearOpMode {
         rightFront = hardwareMap.get(DcMotorEx.class, "rightFront");
         leftBack = hardwareMap.get(DcMotorEx.class, "leftBack");
         rightBack = hardwareMap.get(DcMotorEx.class, "rightBack");
+        turret = hardwareMap.get(DcMotorEx.class, "turret");
+        outtake = hardwareMap.get(DcMotorEx.class, "outtake");
+        intake = hardwareMap.get(DcMotor.class, "intake");
 
         leftFront.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         rightFront.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         leftBack.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         rightBack.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        turret = hardwareMap.get(DcMotorEx.class, "turret");
         turret.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
         leftFront.setDirection(DcMotorSimple.Direction.REVERSE);
         leftBack.setDirection(DcMotorSimple.Direction.REVERSE);
-
-        outtake = hardwareMap.get(DcMotorEx.class, "outtake");
         outtake.setDirection(DcMotorSimple.Direction.REVERSE);
         outtake.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        intake = hardwareMap.get(DcMotor.class, "intake");
 
         kickers[0] = hardwareMap.get(Servo.class, "kick1");
         kickers[1] = hardwareMap.get(Servo.class, "kick2");
@@ -75,7 +74,7 @@ public class TurrentTracking extends LinearOpMode {
             LLResult result = limelight.getLatestResult();
 
             boolean id24Visible = false;
-            double targetTy = 0;
+            double targetTy = -10.0;
 
             if (result != null && result.isValid()) {
                 List<LLResultTypes.FiducialResult> fiducials = result.getFiducialResults();
@@ -106,41 +105,45 @@ public class TurrentTracking extends LinearOpMode {
                 }
             } else {
                 turret.setPower(gamepad2.right_bumper ? 0.45 : (gamepad2.left_bumper ? -0.45 : 0));
-                lastTurretPower = 0;
-                previousError = 0;
+                lastTurretPower = 0; previousError = 0;
             }
 
-            // Shooter Velocity
+            // --- REVISED VELOCITY MATH (Close 1250 | Mid 1300 | Far 1550) ---
             if (gamepad2.right_trigger > 0.2) {
                 double targetVelocity;
-                if (targetTy >= -5.0) targetVelocity = 1300;
-                else if (targetTy <= -11.0) targetVelocity = 1400;
-                else targetVelocity = 1300 + (targetTy + 5.0) * (100.0 / -6.0);
-
+                if (targetTy <= -10.0) {
+                    targetVelocity = 1250;
+                } else if (targetTy >= -2.0) {
+                    targetVelocity = 1550;
+                } else if (targetTy >= -7.0) {
+                    // Mid (-7) to Far (-2) -> 1300 to 1550
+                    double progress = (targetTy - (-7.0)) / ((-2.0) - (-7.0));
+                    targetVelocity = 1300 + (progress * 250.0);
+                } else {
+                    // Close (-10) to Mid (-7) -> 1250 to 1300
+                    double progress = (targetTy - (-10.0)) / ((-7.0) - (-10.0));
+                    targetVelocity = 1250 + (progress * 50.0);
+                }
                 outtake.setVelocity(targetVelocity);
+            } else {
+                outtake.setVelocity(0);
+            }
 
-                if (gamepad2.x && !prevX) {
-                    int slot = findKickerByColor(BallColor.PURPLE);
-                    if (slot != -1) requestKick(slot, now);
-                }
-                if (gamepad2.b && !prevB) {
-                    int slot = findKickerByColor(BallColor.GREEN);
-                    if (slot != -1) requestKick(slot, now);
-                }
-            } else { outtake.setVelocity(0); }
+            // Kickers
+            if (gamepad2.x && !prevX) {
+                int slot = findKickerByColor(BallColor.PURPLE);
+                if (slot != -1) requestKick(slot, now);
+            }
+            if (gamepad2.b && !prevB) {
+                int slot = findKickerByColor(BallColor.GREEN);
+                if (slot != -1) requestKick(slot, now);
+            }
 
             intake.setPower(gamepad1.a ? 1.0 : (gamepad1.b ? -1.0 : 0));
             updateKickers(now);
 
-            telemetry.addData("Ty", targetTy);
-            telemetry.addData("Velocity", outtake.getVelocity());
-
-            // Color detection telemetry
-            for (int i = 0; i < 7; i++) {
-                BallColor color = detectColor(sensors[i]);
-                telemetry.addData("Color Sensor " + (i+1), color);
-            }
-
+            telemetry.addData("Ty", String.format("%.2f", targetTy));
+            telemetry.addData("Velocity", (int)outtake.getVelocity());
             telemetry.update();
 
             prevX = gamepad2.x; prevB = gamepad2.b;
@@ -178,35 +181,11 @@ public class TurrentTracking extends LinearOpMode {
     }
 
     private BallColor detectColor(ColorSensor s) {
-        int r = s.red();
-        int g = s.green();
-        int b = s.blue();
-        if (r + g + b < 20) return BallColor.NONE;
-
-        float[] hsvLocal = new float[3];
-        android.graphics.Color.RGBToHSV(r, g, b, hsvLocal);
-        float h = hsvLocal[0];
-        float sValue = hsvLocal[1];  // Saturation value
-
-        telemetry.addData("Sensor Red", r);
-        telemetry.addData("Sensor Green", g);
-        telemetry.addData("Sensor Blue", b);
-        telemetry.addData("HSV Hue", h);
-        telemetry.addData("HSV Saturation", sValue);
-
-        // Check for valid saturation level
-        if (sValue < 0.15) return BallColor.NONE;  // Use 0.15 as the new threshold for saturation
-
-        if (h >= 30 && h <= 150) {
-            telemetry.addData("Detected Color", "GREEN");
-            return BallColor.GREEN;
-        }
-        if (h >= 240 && h <= 360) {
-            telemetry.addData("Detected Color", "PURPLE");
-            return BallColor.PURPLE;
-        }
-
-        telemetry.addData("Detected Color", "NONE");
+        float[] hsv = new float[3];
+        Color.RGBToHSV(s.red(), s.green(), s.blue(), hsv);
+        if (hsv[1] < 0.20) return BallColor.NONE;
+        if (hsv[0] >= 20 && hsv[0] <= 170) return BallColor.GREEN;
+        if (hsv[0] >= 230 && hsv[0] <= 360) return BallColor.PURPLE;
         return BallColor.NONE;
     }
 
