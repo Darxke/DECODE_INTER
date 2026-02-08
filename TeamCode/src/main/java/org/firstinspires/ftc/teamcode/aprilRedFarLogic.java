@@ -21,7 +21,7 @@ import com.qualcomm.hardware.limelightvision.Limelight3A;
 
 import java.util.List;
 
-@Autonomous(name="AprilRedFarLogic", group="Autonomous")
+@Autonomous(name="AprilRedFar", group="Autonomous")
 public class aprilRedFarLogic extends LinearOpMode {
 
     // ===== HARDWARE =====
@@ -35,7 +35,7 @@ public class aprilRedFarLogic extends LinearOpMode {
     private MecanumDrive drive;
 
     // ===== TURNTABLE POSITIONS (encoder ticks) =====
-    private static final int RIGHT_SCAN_TICKS = 93;  // turret turned left
+    private static final int RIGHT_SCAN_TICKS = 96;  // turret turned left
     private static final int FORWARD_TICKS = 0;       // forward shooting
 
     // ===== KICKER POSITIONS =====
@@ -122,7 +122,7 @@ public class aprilRedFarLogic extends LinearOpMode {
         waitForStart();
 
         // ===== START INTAKE =====
-        outtake.setVelocity(1550); // RPM
+        outtake.setVelocity(1590); // RPM
         if (isStopRequested()) return;
 
         // ===== TURRET GOES BACK TO SHOOTING POSITION ONCE APRILTAG DETECTED =====
@@ -136,7 +136,7 @@ public class aprilRedFarLogic extends LinearOpMode {
                 telemetry.update();
             }
         }
-        sleep(1250);
+        sleep(1625);
         // ===== FIRST SHOOT =====
         shootSequence();
 
@@ -179,6 +179,8 @@ public class aprilRedFarLogic extends LinearOpMode {
 
         // ===== SECOND SHOOT =====
         intake.setPower(1);
+        turret.setTargetPosition(93);
+        turret.setPower(0.5);
         Actions.runBlocking(cycle);
         intake.setPower(-1);
         Actions.runBlocking(shoot);
@@ -257,7 +259,7 @@ public class aprilRedFarLogic extends LinearOpMode {
                         break;
 
                     case 1: // wait up (longer)
-                        if (now - stateTime >= 500) { // 500ms instead of 350ms
+                        if (now - stateTime >= 560) { // 500ms instead of 350ms
                             setKicker(activeKicker, KICK_REST[activeKicker]);
                             stateTime = now;
                             shootState = 2;
@@ -265,7 +267,7 @@ public class aprilRedFarLogic extends LinearOpMode {
                         break;
 
                     case 2: // wait down + interkick
-                        if (now - stateTime >= 650) {
+                        if (now - stateTime >= 710) {
                             shootIndex++;
                             shootState = 0;
                             activeKicker = -1;

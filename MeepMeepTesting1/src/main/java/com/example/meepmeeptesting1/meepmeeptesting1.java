@@ -17,20 +17,9 @@ public class meepmeeptesting1 {
                 .setConstraints(60, 60, Math.toRadians(180), Math.toRadians(180), 15)
                 .build();
 
-        bot.runAction(bot.getDrive().actionBuilder(new Pose2d(59, 12, Math.toRadians(180)))
-                .strafeToLinearHeading(new Vector2d(31,30), Math.toRadians(-273))
-                .waitSeconds(.1)
-                .strafeToConstantHeading(
-                        new Vector2d(29, 72)
-                )
-                .strafeToLinearHeading(new Vector2d(59, 12), Math.toRadians(-180))
-                .strafeToLinearHeading(new Vector2d(7.5,35), Math.toRadians(-273))
-                .waitSeconds(.1)
-                .strafeToConstantHeading(
-                        new Vector2d(5.5, 72)
-                )
-                .strafeToLinearHeading(new Vector2d(59, 12), Math.toRadians(-180))
-                .strafeToLinearHeading(new Vector2d(35, 20), Math.toRadians(-180))
+        bot.runAction(bot.getDrive().actionBuilder(new Pose2d(59, 12, Math.toRadians(-273)))
+                .strafeToLinearHeading(new Vector2d(58, 72), Math.toRadians(-273))
+
 
                 .build());
 

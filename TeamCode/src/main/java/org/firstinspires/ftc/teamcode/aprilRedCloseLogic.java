@@ -21,7 +21,7 @@ import com.qualcomm.hardware.limelightvision.Limelight3A;
 
 import java.util.List;
 
-@Autonomous(name="aprilRedCloseLogic", group="Autonomous")
+@Autonomous(name="AprilRedClose", group="Autonomous")
 public class aprilRedCloseLogic extends LinearOpMode {
 
     // ===== HARDWARE =====
@@ -40,7 +40,7 @@ public class aprilRedCloseLogic extends LinearOpMode {
 
     // ===== KICKER POSITIONS =====
     private static final double[] KICK_FIRE = {0.7, 1, 0.45};
-    private static final double[] KICK_REST = {0.1, 0, 1.0};
+    private static final double[] KICK_REST = {0, 0, 1.0};
 
     // ===== SHOOT PATTERNS =====
     enum BallColor { GREEN, PURPLE, NONE }
@@ -91,7 +91,7 @@ public class aprilRedCloseLogic extends LinearOpMode {
         limelight.start();
 
         // Roadrunner start pose
-        Pose2d startPose = new Pose2d(-52, 52, Math.toRadians(-222));
+        Pose2d startPose = new Pose2d(-52, 52, Math.toRadians(-218));
         drive = new MecanumDrive(hardwareMap, startPose);
 
         // ===== INIT LOOP TELEMETRY: APRILTAG + PATTERN =====
@@ -126,7 +126,7 @@ public class aprilRedCloseLogic extends LinearOpMode {
         waitForStart();
 
         // ===== START INTAKE =====
-        outtake.setVelocity(1250); // RPM
+        outtake.setVelocity(1260); // RPM
         if (isStopRequested()) return;
 
         // ===== DRIVE BACKWARD WHILE SCANNING =====
@@ -138,7 +138,7 @@ public class aprilRedCloseLogic extends LinearOpMode {
         // ===== TURRET GOES BACK TO SHOOTING POSITION ONCE APRILTAG DETECTED =====
         updatePatternFromLimelight(); // check one last time after moving
         if (activePattern != null) {
-            turret.setTargetPosition(FORWARD_TICKS);
+            turret.setTargetPosition(0);
             turret.setPower(0.5);
             while (opModeIsActive() && turret.isBusy()) {
                 telemetry.addData("Turret", turret.getCurrentPosition());
@@ -146,49 +146,46 @@ public class aprilRedCloseLogic extends LinearOpMode {
                 telemetry.update();
             }
         }
-
+        sleep(850);
         // ===== FIRST SHOOT =====
         shootSequence();
         intake.setPower(1);
 
         // ===== CYCLE 1 MOVEMENT =====
-        Action cycleMove = drive.actionBuilder(new Pose2d(-20, 20, Math.toRadians(-222)))
-                .strafeToLinearHeading(new Vector2d(-10, 35), Math.toRadians(-260))
+        Action cycleMove = drive.actionBuilder(new Pose2d(-20, 20, Math.toRadians(-218)))
+                .strafeToLinearHeading(new Vector2d(-10.5, 40), Math.toRadians(-256))
                 .waitSeconds(.1)
-                .strafeToConstantHeading(new Vector2d(-12.5, 65.5))
+                .strafeToConstantHeading(new Vector2d(-13, 67))
                 .waitSeconds(.25)
                 .build();
         Actions.runBlocking(cycleMove);
 
-        Action shoot2 = drive.actionBuilder(new Pose2d(-12.5,65.5, Math.toRadians(-260)))
-                .strafeToLinearHeading(new Vector2d(-20,20), Math.toRadians(-222))
+        Action shoot2 = drive.actionBuilder(new Pose2d(-13,67, Math.toRadians(-256)))
+                .strafeToLinearHeading(new Vector2d(-20,20), Math.toRadians(-218))
                 .build();
 
-        Action cycle2 = drive.actionBuilder(new Pose2d(-20,20, Math.toRadians(-222)))
-                .strafeToLinearHeading(new Vector2d(11.5, 40), Math.toRadians(-260))
+        Action cycle2 = drive.actionBuilder(new Pose2d(-20,20, Math.toRadians(-218)))
+                .strafeToLinearHeading(new Vector2d(12.5, 48), Math.toRadians(-256))
                 .waitSeconds(.1)
-                .strafeToConstantHeading(new Vector2d(10, 79))
-                .waitSeconds(.5)
+                .strafeToConstantHeading(new Vector2d(10, 81))
+                .waitSeconds(.25)
                 .build();
 
-        Action shoot3 = drive.actionBuilder(new Pose2d(10,79, Math.toRadians(-260)))
-                .strafeToConstantHeading(new Vector2d(11,50))
-                .waitSeconds(.1)
-                .strafeToLinearHeading(new Vector2d(-20,20), Math.toRadians(-222))
+        Action shoot3 = drive.actionBuilder(new Pose2d(10,81, Math.toRadians(-256)))
+                .strafeToConstantHeading(new Vector2d(11,70))
+                .strafeToLinearHeading(new Vector2d(-20,20), Math.toRadians(-218))
                 .build();
-        Action park = drive.actionBuilder(new Pose2d(-20,20, Math.toRadians(-222)))
-                .strafeToLinearHeading(new Vector2d(9.5,50), Math.toRadians(-260))
+        Action park = drive.actionBuilder(new Pose2d(-20,20, Math.toRadians(-218)))
+                .strafeToLinearHeading(new Vector2d(0,60), Math.toRadians(-260))
                 .build();
         // ===== RETURN TURRET TO SHOOTING POSITION AFTER CYCLE =====
-        turret.setTargetPosition(FORWARD_TICKS);
-        turret.setPower(0.5);
-        while (opModeIsActive() && turret.isBusy()) {
-            telemetry.addData("Turret", turret.getCurrentPosition());
-            telemetry.update();
-        }
+
 
         // ===== SECOND SHOOT =====
         intake.setPower(-1);
+        outtake.setVelocity(1250); // RPM
+        turret.setTargetPosition(11);
+        turret.setPower(.5);
         Actions.runBlocking(shoot2);
         intake.setPower(0);
         shootSequence();
@@ -273,7 +270,7 @@ public class aprilRedCloseLogic extends LinearOpMode {
                         break;
 
                     case 2: // wait down + interkick
-                        if (now - stateTime >= 650) {
+                        if (now - stateTime >=650) {
                             shootIndex++;
                             shootState = 0;
                             activeKicker = -1;
