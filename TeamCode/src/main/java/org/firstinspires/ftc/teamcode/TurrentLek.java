@@ -11,7 +11,7 @@ import com.qualcomm.robotcore.hardware.Servo;
 
 import java.util.List;
 
-@TeleOp(name = "TeleOp_SplitControllers", group = "Production")
+@TeleOp(name = "TeleOp_SplitControllers_DualOuttake", group = "Production")
 public class TurrentLek extends LinearOpMode {
 
     // Drive
@@ -19,7 +19,7 @@ public class TurrentLek extends LinearOpMode {
 
     // Mechanisms
     private DcMotor intake;
-    private DcMotorEx outtake;  // shooter
+    private DcMotorEx outtakeL, outtakeR;  // dual shooter motors
     private DcMotorEx turret;
 
     // Kickers
@@ -32,10 +32,10 @@ public class TurrentLek extends LinearOpMode {
     private List<LynxModule> allHubs;
 
     // Shooter settings
-    private static final double RPM_CLOSE = 2700;
-    private static final double RPM_FAR   = 3600.0;
+    private static final double RPM_CLOSE = 2571;
+    private static final double RPM_FAR   = 3268;
 
-    // Your old conversion assumed 28 ticks/rev
+    // Encoder
     private static final double TICKS_PER_REV = 28.0;
 
     private static final double VELOCITY_TOLERANCE = 45.0;
@@ -56,12 +56,13 @@ public class TurrentLek extends LinearOpMode {
     @Override
     public void runOpMode() throws InterruptedException {
 
+        // ---------------- BULK READ ----------------
         allHubs = hardwareMap.getAll(LynxModule.class);
         for (LynxModule hub : allHubs) {
             hub.setBulkCachingMode(LynxModule.BulkCachingMode.MANUAL);
         }
 
-        // Drive motors
+        // ---------------- DRIVE MOTORS ----------------
         leftFront  = hardwareMap.get(DcMotorEx.class, "leftFront");
         rightFront = hardwareMap.get(DcMotorEx.class, "rightFront");
         leftBack   = hardwareMap.get(DcMotorEx.class, "leftBack");
@@ -74,25 +75,35 @@ public class TurrentLek extends LinearOpMode {
         leftFront.setDirection(DcMotorSimple.Direction.REVERSE);
         leftBack.setDirection(DcMotorSimple.Direction.REVERSE);
 
-        // Intake
+        // ---------------- INTAKE ----------------
         intake = hardwareMap.get(DcMotor.class, "intake");
 
-        // Shooter
-        outtake = hardwareMap.get(DcMotorEx.class, "outtake");
-        outtake.setDirection(DcMotorSimple.Direction.REVERSE);
-        outtake.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        // ---------------- SHOOTER (DUAL OUTTAKE) ----------------
+        outtakeL = hardwareMap.get(DcMotorEx.class, "outtakeL");
+        outtakeR = hardwareMap.get(DcMotorEx.class, "outtakeR");
 
-        // Turret
+        // Reverse one motor so both spin correctly
+        outtakeL.setDirection(DcMotorSimple.Direction.REVERSE);
+        outtakeR.setDirection(DcMotorSimple.Direction.FORWARD);
+
+        outtakeL.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        outtakeR.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+
+        // Optional: PIDF for precise velocity control
+        outtakeL.setVelocityPIDFCoefficients(50, 0, 5, 12);
+        outtakeR.setVelocityPIDFCoefficients(50, 0, 5, 12);
+
+        // ---------------- TURRET ----------------
         turret = hardwareMap.get(DcMotorEx.class, "turret");
         turret.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
-        // Kickers
+        // ---------------- KICKERS ----------------
         kick1 = hardwareMap.get(Servo.class, "kick1");
         kick2 = hardwareMap.get(Servo.class, "kick2");
         kick3 = hardwareMap.get(Servo.class, "kick3");
         setAllKickersRest();
 
-        // LED
+        // ---------------- LED ----------------
         led = hardwareMap.get(RevBlinkinLedDriver.class, "led");
         led.setPattern(RevBlinkinLedDriver.BlinkinPattern.BLACK);
 
@@ -136,24 +147,26 @@ public class TurrentLek extends LinearOpMode {
             // ---------------- GAMEPAD 2: SHOOTER MODE ----------------
             if (gamepad2.dpad_up) farMode = true;
             if (gamepad2.dpad_down) farMode = false;
-            if (gamepad2.a) intake.setPower(1);
 
-            // ---------------- GAMEPAD 2: SHOOTER (HOLD RT) ----------------
+            // ---------------- GAMEPAD 2: SHOOTER ----------------
             boolean shooterOn = gamepad2.right_trigger > 0.2;
-
             double targetRpm = farMode ? RPM_FAR : RPM_CLOSE;
             double targetVel = rpmToTicksPerSecond(targetRpm);
 
             if (shooterOn) {
-                outtake.setVelocity(targetVel);
+                outtakeL.setVelocity(targetVel);
+                outtakeR.setVelocity(targetVel);
 
-                if (Math.abs(outtake.getVelocity() - targetVel) < VELOCITY_TOLERANCE) {
+                double avgVel = (outtakeL.getVelocity() + outtakeR.getVelocity()) / 2.0;
+
+                if (Math.abs(avgVel - targetVel) < VELOCITY_TOLERANCE) {
                     led.setPattern(RevBlinkinLedDriver.BlinkinPattern.BREATH_BLUE);
                 } else {
                     led.setPattern(RevBlinkinLedDriver.BlinkinPattern.FIRE_LARGE);
                 }
             } else {
-                outtake.setVelocity(0);
+                outtakeL.setVelocity(0);
+                outtakeR.setVelocity(0);
                 led.setPattern(RevBlinkinLedDriver.BlinkinPattern.BLACK);
             }
 
@@ -170,13 +183,16 @@ public class TurrentLek extends LinearOpMode {
             lastB2 = b2;
             lastY2 = y2;
 
+            // ---------------- TELEMETRY ----------------
             telemetry.addData("Shooter", shooterOn ? "ON" : "OFF");
-            telemetry.addData("Mode", farMode ? "FAR (1586)" : "CLOSE (1200)");
-            telemetry.addData("Vel", outtake.getVelocity());
+            telemetry.addData("Mode", farMode ? "FAR" : "CLOSE");
+            telemetry.addData("Outtake L Vel", outtakeL.getVelocity());
+            telemetry.addData("Outtake R Vel", outtakeR.getVelocity());
             telemetry.update();
         }
     }
 
+    // ---------------- HELPERS ----------------
     private double rpmToTicksPerSecond(double rpm) {
         return (rpm * TICKS_PER_REV) / 60.0;
     }

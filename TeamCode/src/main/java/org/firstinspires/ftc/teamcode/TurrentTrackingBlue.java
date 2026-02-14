@@ -13,13 +13,14 @@ import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.Servo;
 
-@TeleOp(name = "TurrentTracking_Red", group = "Production")
-public class TurrentTracking extends LinearOpMode {
+@TeleOp(name = "TurrentTracking_Blue", group = "Production")
+public class TurrentTrackingBlue extends LinearOpMode {
 
-    private final int TARGET_ID = 24;
+    private final int TARGET_ID = 20;
+
     private static double HORIZONTAL_OFFSET = 5.8;
 
-    // 6000 RPM motors (~2800 ticks/sec max if 28 CPR encoder)
+    // 6000 RPM motors (~2800 ticks/sec max)
     private double START_RPM = 1800.0;
     private double RPM_PER_INCH = 8.0;
 
@@ -47,7 +48,7 @@ public class TurrentTracking extends LinearOpMode {
 
     private BallColor[] cachedColors = new BallColor[7];
     private double lastKnownTargetVelocity = 2000;
-    private boolean id24Visible = false;
+    private boolean tagVisible = false;
 
     @Override
     public void runOpMode() {
@@ -72,7 +73,6 @@ public class TurrentTracking extends LinearOpMode {
         rightBack.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         turret.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
-        // Drive direction
         leftFront.setDirection(DcMotorSimple.Direction.REVERSE);
         leftBack.setDirection(DcMotorSimple.Direction.REVERSE);
 
@@ -82,7 +82,7 @@ public class TurrentTracking extends LinearOpMode {
         outtakeL.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         outtakeR.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
 
-        // Starter PIDF values for 6000 RPM motors
+        // Starter PIDF values
         outtakeL.setVelocityPIDFCoefficients(50, 0, 5, 12);
         outtakeR.setVelocityPIDFCoefficients(50, 0, 5, 12);
 
@@ -101,30 +101,16 @@ public class TurrentTracking extends LinearOpMode {
 
             long now = System.currentTimeMillis();
 
-            for (int i = 0; i < 7; i++)
-                cachedColors[i] = detectColor(sensors[i], i);
-
-            // Intake
-            if (gamepad2.dpad_left && !prevDpadLeft)
-                intakeCancelStop = true;
-            if (!gamepad2.dpad_up)
-                intakeCancelStop = false;
-
-            if (gamepad2.dpad_down)
-                intake.setPower(-1.0);
-            else if (gamepad2.dpad_up)
-                intake.setPower(1.0);
-            else
-                intake.setPower(0);
-
-            // Distance-based vision scaling
+            // ---------------- VISION ----------------
             LLResult result = limelight.getLatestResult();
-            id24Visible = false;
+            tagVisible = false;
 
             if (result != null && result.isValid()) {
                 for (LLResultTypes.FiducialResult f : result.getFiducialResults()) {
                     if (f.getFiducialId() == TARGET_ID) {
-                        id24Visible = true;
+
+                        tagVisible = true;
+                        led.setPattern(RevBlinkinLedDriver.BlinkinPattern.BLUE);
 
                         double distInches =
                                 Math.abs(f.getTargetPoseRobotSpace()
@@ -133,7 +119,7 @@ public class TurrentTracking extends LinearOpMode {
                         lastKnownTargetVelocity =
                                 clamp(START_RPM + (distInches * RPM_PER_INCH),
                                         1500,
-                                        3500);   // ~2800 max for 6000 RPM
+                                        2700);
 
                         double rawTx = f.getTargetXDegrees() + HORIZONTAL_OFFSET;
                         smoothedTx = (rawTx * filterWeight)
@@ -144,38 +130,30 @@ public class TurrentTracking extends LinearOpMode {
                 }
             }
 
-            // Flywheel control
+            if (!tagVisible) {
+                led.setPattern(RevBlinkinLedDriver.BlinkinPattern.RED);
+            }
+
+            // ---------------- FLYWHEEL ----------------
             if (gamepad2.right_trigger > 0.3) {
 
                 outtakeL.setVelocity(0);
                 outtakeR.setVelocity(0);
-                led.setPattern(RevBlinkinLedDriver.BlinkinPattern.BLUE);
 
             } else {
 
                 outtakeL.setVelocity(lastKnownTargetVelocity);
                 outtakeR.setVelocity(lastKnownTargetVelocity);
-
-                double avgVelocity =
-                        (outtakeL.getVelocity()
-                                + outtakeR.getVelocity()) / 2.0;
-
-                if (Math.abs(avgVelocity - lastKnownTargetVelocity) < 75)
-                    led.setPattern(
-                            RevBlinkinLedDriver.BlinkinPattern.BREATH_BLUE);
-                else
-                    led.setPattern(
-                            RevBlinkinLedDriver.BlinkinPattern.FIRE_LARGE);
             }
 
-            // Drive
+            // ---------------- DRIVE ----------------
             double scale = gamepad1.right_bumper ? 0.4 : 1.0;
             driveRobot(-gamepad1.left_stick_y * scale,
                     gamepad1.left_stick_x * scale,
                     gamepad1.right_stick_x * scale);
 
-            // Turret
-            if (gamepad1.left_trigger > 0.2 && id24Visible) {
+            // ---------------- TURRET ----------------
+            if (gamepad1.left_trigger > 0.2 && tagVisible) {
                 double derivative = (smoothedTx - previousError);
                 turret.setPower(clamp(
                         (smoothedTx * kP_Turret)
@@ -185,29 +163,10 @@ public class TurrentTracking extends LinearOpMode {
                         0.8));
                 previousError = smoothedTx;
             } else {
-                turret.setPower(
-                        gamepad2.right_bumper ? 0.25 :
-                                (gamepad2.left_bumper ? -0.25 : 0));
+                turret.setPower(0);
                 previousError = 0;
             }
-
-            updateKickers(now);
-
-            prevDpadLeft = gamepad2.dpad_left;
-            prevA2 = gamepad2.a;
-            prevY2 = gamepad2.y;
         }
-    }
-
-    private BallColor detectColor(ColorSensor s, int index) {
-        if (s.alpha() < 120) return BallColor.NONE;
-        float[] hsv = new float[3];
-        Color.RGBToHSV(s.red(), s.green(), s.blue(), hsv);
-        if (hsv[0] >= 200 && hsv[0] <= 350 && hsv[1] > 0.08)
-            return BallColor.PURPLE;
-        if (hsv[0] >= 60 && hsv[0] <= 170 && hsv[1] > 0.25)
-            return BallColor.GREEN;
-        return BallColor.NONE;
     }
 
     private void driveRobot(double y, double x, double rx) {
@@ -223,17 +182,6 @@ public class TurrentTracking extends LinearOpMode {
         rightFront.setPower(rf / max);
         leftBack.setPower(lb / max);
         rightBack.setPower(rb / max);
-    }
-
-    private void updateKickers(long now) {
-        for (int i = 0; i < 4; i++) {
-            if (firing[i]) {
-                kickers[i].setPosition(FIRE[i]);
-                if (now > fireEndMs[i]) firing[i] = false;
-            } else {
-                kickers[i].setPosition(REST[i]);
-            }
-        }
     }
 
     private double clamp(double v, double min, double max) {
