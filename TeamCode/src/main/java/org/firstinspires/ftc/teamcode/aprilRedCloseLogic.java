@@ -26,8 +26,8 @@ public class aprilRedCloseLogic extends LinearOpMode {
 
     // ===== HARDWARE =====
     private DcMotorEx turret;
-    private DcMotorEx outtake;
-
+    private DcMotorEx outtakeL;
+    private DcMotorEx outtakeR;
     private DcMotorEx intake;
     private ColorSensor[] sensors = new ColorSensor[6];
     private Servo kick1, kick2, kick3;
@@ -69,9 +69,12 @@ public class aprilRedCloseLogic extends LinearOpMode {
         turret.setMode(DcMotorEx.RunMode.RUN_TO_POSITION);
         turret.setPower(0.5);
 
-        outtake = hardwareMap.get(DcMotorEx.class, "outtake");
-        outtake.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
-        outtake.setDirection(DcMotorSimple.Direction.REVERSE);
+        outtakeL = hardwareMap.get(DcMotorEx.class, "outtakeL");
+        outtakeR = hardwareMap.get(DcMotorEx.class, "outtakeR");
+
+        outtakeL.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
+        outtakeR.setDirection(DcMotorSimple.Direction.REVERSE);
+        outtakeR.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
 
         intake = hardwareMap.get(DcMotorEx.class, "intake");
 
@@ -126,7 +129,8 @@ public class aprilRedCloseLogic extends LinearOpMode {
         waitForStart();
 
         // ===== START INTAKE =====
-        outtake.setVelocity(1260); // RPM
+        outtakeL.setVelocity(1200);
+        outtakeR.setVelocity(1200);// RPM
         if (isStopRequested()) return;
 
         // ===== DRIVE BACKWARD WHILE SCANNING =====
@@ -146,7 +150,7 @@ public class aprilRedCloseLogic extends LinearOpMode {
                 telemetry.update();
             }
         }
-        sleep(850);
+        sleep(1250);
         // ===== FIRST SHOOT =====
         shootSequence();
         intake.setPower(1);
@@ -183,7 +187,8 @@ public class aprilRedCloseLogic extends LinearOpMode {
 
         // ===== SECOND SHOOT =====
         intake.setPower(-1);
-        outtake.setVelocity(1250); // RPM
+        outtakeL.setVelocity(1150);
+        outtakeR.setVelocity(1150);// RPM
         turret.setTargetPosition(11);
         turret.setPower(.5);
         Actions.runBlocking(shoot2);
@@ -198,7 +203,8 @@ public class aprilRedCloseLogic extends LinearOpMode {
         Actions.runBlocking(park);
 
         // ===== STOP INTAKE AT END =====
-        outtake.setVelocity(0);
+        outtakeL.setVelocity(0);
+        outtakeR.setVelocity(0);
     }
 
     // ----------------------- HELPERS -----------------------

@@ -26,7 +26,8 @@ public class aprilBlueFar extends LinearOpMode {
 
     // ===== HARDWARE =====
     private DcMotorEx turret;
-    private DcMotorEx outtake;
+    private DcMotorEx outtakeL;
+    private DcMotorEx outtakeR;
 
     private DcMotorEx intake;
     private ColorSensor[] sensors = new ColorSensor[6];
@@ -35,7 +36,7 @@ public class aprilBlueFar extends LinearOpMode {
     private MecanumDrive drive;
 
     // ===== TURNTABLE POSITIONS (encoder ticks) =====
-    private static final int RIGHT_SCAN_TICKS = -109;  // turret turned left
+    private static final int RIGHT_SCAN_TICKS = -102;  // turret turned left
     private static final int FORWARD_TICKS = 0;       // forward shooting
 
     // ===== KICKER POSITIONS =====
@@ -69,9 +70,12 @@ public class aprilBlueFar extends LinearOpMode {
         turret.setMode(DcMotorEx.RunMode.RUN_TO_POSITION);
         turret.setPower(0.5);
 
-        outtake = hardwareMap.get(DcMotorEx.class, "outtake");
-        outtake.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
-        outtake.setDirection(DcMotorSimple.Direction.REVERSE);
+        outtakeL = hardwareMap.get(DcMotorEx.class, "outtakeL");
+        outtakeR = hardwareMap.get(DcMotorEx.class, "outtakeR");
+
+        outtakeL.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
+        outtakeR.setDirection(DcMotorSimple.Direction.REVERSE);
+        outtakeR.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
 
         intake = hardwareMap.get(DcMotorEx.class, "intake");
 
@@ -122,7 +126,9 @@ public class aprilBlueFar extends LinearOpMode {
         waitForStart();
 
         // ===== START INTAKE =====
-        outtake.setVelocity(1600); // RPM
+        outtakeL.setVelocity(1525); // RPM
+        outtakeR.setVelocity(1525); // RPM
+
         if (isStopRequested()) return;
 
         // ===== TURRET GOES BACK TO SHOOTING POSITION ONCE APRILTAG DETECTED =====
@@ -136,7 +142,7 @@ public class aprilBlueFar extends LinearOpMode {
                 telemetry.update();
             }
         }
-        sleep(1625);
+        sleep(2500);
         // ===== FIRST SHOOT =====
         shootSequence();
 
@@ -147,24 +153,13 @@ public class aprilBlueFar extends LinearOpMode {
 
         Action cycle = drive.actionBuilder(new Pose2d(59, -12, Math.toRadians(180)))
                 .strafeToLinearHeading(new Vector2d(33,-30), Math.toRadians(273))
-                .waitSeconds(.1)
+                .waitSeconds(.05)
                 .strafeToConstantHeading(
-                        new Vector2d(30.5, -72)
+                        new Vector2d(30.5, -68)
                 )
                 .build();
 
-        Action shoot = drive.actionBuilder(new Pose2d(30.5, -72, Math.toRadians(273)))
-                .strafeToLinearHeading(new Vector2d(59, -12), Math.toRadians(180))
-                .build();
-
-        Action cycle2 = drive.actionBuilder(new Pose2d(59, -12, Math.toRadians(180)))
-                .strafeToLinearHeading(new Vector2d(10,-35), Math.toRadians(273))
-                .waitSeconds(.1)
-                .strafeToConstantHeading(
-                        new Vector2d(8, -72)
-                )
-                .build();
-        Action shoot2 = drive.actionBuilder(new Pose2d(8, -72, Math.toRadians(273)))
+        Action shoot = drive.actionBuilder(new Pose2d(30.5, -68, Math.toRadians(273)))
                 .strafeToLinearHeading(new Vector2d(59, -12), Math.toRadians(180))
                 .build();
 
@@ -179,23 +174,18 @@ public class aprilBlueFar extends LinearOpMode {
 
         // ===== SECOND SHOOT =====
         intake.setPower(1);
-        turret.setTargetPosition(-103);
+        turret.setTargetPosition(-98);
         turret.setPower(0.5);
         Actions.runBlocking(cycle);
         intake.setPower(-1);
         Actions.runBlocking(shoot);
         intake.setPower(0);
         shootSequence();
-        intake.setPower(1);
-        Actions.runBlocking(cycle2);
-        intake.setPower(-1);
-        Actions.runBlocking(shoot2);
-        intake.setPower(0);
-        shootSequence();
         Actions.runBlocking(parking);
 
         // ===== STOP INTAKE AT END =====
-        outtake.setVelocity(0);
+        outtakeL.setVelocity(0);
+        outtakeR.setVelocity(0);
     }
 
     // ----------------------- HELPERS -----------------------
@@ -259,7 +249,7 @@ public class aprilBlueFar extends LinearOpMode {
                         break;
 
                     case 1: // wait up (longer)
-                        if (now - stateTime >= 550) { // 500ms instead of 350ms
+                        if (now - stateTime >= 1000) { // 500ms instead of 350ms
                             setKicker(activeKicker, KICK_REST[activeKicker]);
                             stateTime = now;
                             shootState = 2;
@@ -267,7 +257,7 @@ public class aprilBlueFar extends LinearOpMode {
                         break;
 
                     case 2: // wait down + interkick
-                        if (now - stateTime >= 700) {
+                        if (now - stateTime >= 1750) {
                             shootIndex++;
                             shootState = 0;
                             activeKicker = -1;

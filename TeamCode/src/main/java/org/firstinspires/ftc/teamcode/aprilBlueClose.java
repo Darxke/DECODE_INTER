@@ -26,7 +26,8 @@ public class aprilBlueClose extends LinearOpMode {
 
     // ===== HARDWARE =====
     private DcMotorEx turret;
-    private DcMotorEx outtake;
+    private DcMotorEx outtakeL;
+    private DcMotorEx outtakeR;
 
     private DcMotorEx intake;
     private ColorSensor[] sensors = new ColorSensor[6];
@@ -69,9 +70,13 @@ public class aprilBlueClose extends LinearOpMode {
         turret.setMode(DcMotorEx.RunMode.RUN_TO_POSITION);
         turret.setPower(0.5);
 
-        outtake = hardwareMap.get(DcMotorEx.class, "outtake");
-        outtake.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
-        outtake.setDirection(DcMotorSimple.Direction.REVERSE);
+        outtakeL = hardwareMap.get(DcMotorEx.class, "outtakeL");
+        outtakeR = hardwareMap.get(DcMotorEx.class, "outtakeR");
+
+        outtakeL.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
+        outtakeR.setDirection(DcMotorSimple.Direction.REVERSE);
+        outtakeR.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
+
 
         intake = hardwareMap.get(DcMotorEx.class, "intake");
 
@@ -126,7 +131,8 @@ public class aprilBlueClose extends LinearOpMode {
         waitForStart();
 
         // ===== START INTAKE =====
-        outtake.setVelocity(1250); // RPM
+        outtakeL.setVelocity(1225);
+        outtakeR.setVelocity(1225);// RPM
         if (isStopRequested()) return;
 
         // ===== DRIVE BACKWARD WHILE SCANNING =====
@@ -138,7 +144,7 @@ public class aprilBlueClose extends LinearOpMode {
         // ===== TURRET GOES BACK TO SHOOTING POSITION ONCE APRILTAG DETECTED =====
         updatePatternFromLimelight(); // check one last time after moving
         if (activePattern != null) {
-            turret.setTargetPosition(-11);
+            turret.setTargetPosition(0);
             turret.setPower(.5);
             while (opModeIsActive() && turret.isBusy()) {
                 telemetry.addData("Turret", turret.getCurrentPosition());
@@ -146,7 +152,7 @@ public class aprilBlueClose extends LinearOpMode {
                 telemetry.update();
             }
         }
-        sleep(850);
+        sleep(1000);
         // ===== FIRST SHOOT =====
         shootSequence();
         intake.setPower(1);
@@ -165,10 +171,10 @@ public class aprilBlueClose extends LinearOpMode {
                 .build();
 
         Action cycle2 = drive.actionBuilder(new Pose2d(-20,-22, Math.toRadians(218)))
-                .strafeToLinearHeading(new Vector2d(13, -44), Math.toRadians(256))
+                .strafeToLinearHeading(new Vector2d(13, -43), Math.toRadians(256))
                 .waitSeconds(.1)
                 .strafeToConstantHeading(new Vector2d(9, -81))
-                .waitSeconds(.3)
+                .waitSeconds(.25)
                 .build();
 
         Action shoot3 = drive.actionBuilder(new Pose2d(9,-81, Math.toRadians(256)))
@@ -187,7 +193,8 @@ public class aprilBlueClose extends LinearOpMode {
         }
 
         // ===== SECOND SHOOT =====
-        outtake.setVelocity(1225);
+        outtakeR.setVelocity(1150);
+        outtakeL.setVelocity(1150);
         intake.setPower(-1);
         turret.setTargetPosition(-11);
         turret.setPower(.5);
@@ -205,7 +212,8 @@ public class aprilBlueClose extends LinearOpMode {
         Actions.runBlocking(park);
 
         // ===== STOP INTAKE AT END =====
-        outtake.setVelocity(0);
+        outtakeL.setVelocity(0);
+        outtakeR.setVelocity(0);
     }
 
     // ----------------------- HELPERS -----------------------

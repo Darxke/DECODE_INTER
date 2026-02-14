@@ -26,7 +26,8 @@ public class AprilFastRobotBlue extends LinearOpMode {
 
     // ===== HARDWARE =====
     private DcMotorEx turret;
-    private DcMotorEx outtake;
+    private DcMotorEx outtakeL;
+    private DcMotorEx outtakeR;
 
     private DcMotorEx intake;
     private ColorSensor[] sensors = new ColorSensor[6];
@@ -35,7 +36,7 @@ public class AprilFastRobotBlue extends LinearOpMode {
     private MecanumDrive drive;
 
     // ===== TURNTABLE POSITIONS (encoder ticks) =====
-    private static final int RIGHT_SCAN_TICKS = -109;  // turret turned left
+    private static final int RIGHT_SCAN_TICKS = -105;  // turret turned left
     private static final int FORWARD_TICKS = 0;       // forward shooting
 
     // ===== KICKER POSITIONS =====
@@ -69,9 +70,13 @@ public class AprilFastRobotBlue extends LinearOpMode {
         turret.setMode(DcMotorEx.RunMode.RUN_TO_POSITION);
         turret.setPower(0.5);
 
-        outtake = hardwareMap.get(DcMotorEx.class, "outtake");
-        outtake.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
-        outtake.setDirection(DcMotorSimple.Direction.REVERSE);
+        outtakeL = hardwareMap.get(DcMotorEx.class, "outtakeL");
+        outtakeR = hardwareMap.get(DcMotorEx.class, "outtakeR");
+
+        outtakeL.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
+        outtakeR.setDirection(DcMotorSimple.Direction.REVERSE);
+        outtakeR.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
+
 
         intake = hardwareMap.get(DcMotorEx.class, "intake");
 
@@ -123,7 +128,9 @@ public class AprilFastRobotBlue extends LinearOpMode {
         waitForStart();
 
         // ===== START INTAKE =====
-        outtake.setVelocity(1575); // RPM
+        outtakeL.setVelocity(1525); // RPM
+        outtakeR.setVelocity(1525); // RPM
+
         if (isStopRequested()) return;
 
         // ===== TURRET GOES BACK TO SHOOTING POSITION ONCE APRILTAG DETECTED =====
@@ -137,7 +144,7 @@ public class AprilFastRobotBlue extends LinearOpMode {
                 telemetry.update();
             }
         }
-        sleep(1625);
+        sleep(2200);
         // ===== FIRST SHOOT =====
         shootSequence();
 
@@ -211,26 +218,20 @@ public class AprilFastRobotBlue extends LinearOpMode {
 
         // ===== SECOND SHOOT =====
         intake.setPower(1);
-        turret.setTargetPosition(-103);
+        turret.setTargetPosition(-105);
         turret.setPower(0.5);
         Actions.runBlocking(cycle);
         intake.setPower(-1);
         Actions.runBlocking(shoot);
         intake.setPower(0);
+
         shootSequence();
         intake.setPower(1);
-        turret.setTargetPosition(-103);
-        turret.setPower(0.5);
-        Actions.runBlocking(cycle1);
-        intake.setPower(-1);
-        Actions.runBlocking(shoot1);
-        intake.setPower(0);
-        shootSequence();
-
         Actions.runBlocking(parking);
 
         // ===== STOP INTAKE AT END =====
-        outtake.setVelocity(0);
+        outtakeL.setVelocity(0);
+        outtakeR.setVelocity(0);
     }
 
     // ----------------------- HELPERS -----------------------
@@ -294,7 +295,7 @@ public class AprilFastRobotBlue extends LinearOpMode {
                         break;
 
                     case 1: // wait up (longer)
-                        if (now - stateTime >= 550) { // 500ms instead of 350ms
+                        if (now - stateTime >= 1000) { // 500ms instead of 350ms
                             setKicker(activeKicker, KICK_REST[activeKicker]);
                             stateTime = now;
                             shootState = 2;
@@ -302,7 +303,7 @@ public class AprilFastRobotBlue extends LinearOpMode {
                         break;
 
                     case 2: // wait down + interkick
-                        if (now - stateTime >= 800) {
+                        if (now - stateTime >= 1750) {
                             shootIndex++;
                             shootState = 0;
                             activeKicker = -1;
