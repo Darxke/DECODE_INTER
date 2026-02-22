@@ -21,8 +21,8 @@ import com.qualcomm.hardware.limelightvision.Limelight3A;
 
 import java.util.List;
 
-@Autonomous(name="AprilBlueClose", group="Autonomous")
-public class aprilBlueClose extends LinearOpMode {
+@Autonomous(name="AprilBlueClose2", group="Autonomous")
+public class aprilBlueClose2 extends LinearOpMode {
 
     // ===== HARDWARE =====
     private DcMotorEx turret;
@@ -36,7 +36,6 @@ public class aprilBlueClose extends LinearOpMode {
     private MecanumDrive drive;
 
     // ===== TURNTABLE POSITIONS (encoder ticks) =====
-    private static final int LEFT_SCAN_TICKS = 250;  // turret turned left
     private static final int FORWARD_TICKS = 0;       // forward shooting
 
     // ===== KICKER POSITIONS =====
@@ -65,10 +64,6 @@ public class aprilBlueClose extends LinearOpMode {
 
         // ===== HARDWARE MAP =====
         turret = hardwareMap.get(DcMotorEx.class, "turret");
-        turret.setMode(DcMotorEx.RunMode.STOP_AND_RESET_ENCODER);
-        turret.setTargetPosition(LEFT_SCAN_TICKS);
-        turret.setMode(DcMotorEx.RunMode.RUN_TO_POSITION);
-        turret.setPower(0.5);
 
         outtakeL = hardwareMap.get(DcMotorEx.class, "outtakeL");
         outtakeR = hardwareMap.get(DcMotorEx.class, "outtakeR");
@@ -141,17 +136,28 @@ public class aprilBlueClose extends LinearOpMode {
                 .build();
         Actions.runBlocking(moveBackward);
 
-        // ===== TURRET GOES BACK TO SHOOTING POSITION ONCE APRILTAG DETECTED =====
-        updatePatternFromLimelight(); // check one last time after moving
-        if (activePattern != null) {
-            turret.setTargetPosition(0);
-            turret.setPower(.5);
-            while (opModeIsActive() && turret.isBusy()) {
-                telemetry.addData("Turret", turret.getCurrentPosition());
-                telemetry.addData("Pattern", activePatternToString());
-                telemetry.update();
-            }
+        // ===== FINAL CHECK & RANDOM FALLBACK =====
+        updatePatternFromLimelight();
+
+        if (activePattern == null) {
+            // No tag found? Choose a random pattern so we don't skip shooting.
+            BallColor[][] possiblePatterns = {PATTERN_GPP, PATTERN_PGP, PATTERN_PPG};
+            activePattern = possiblePatterns[(int)(Math.random() * 3)];
+            telemetry.addLine("NO TAG: Using Random Pattern");
+        } else {
+            telemetry.addData("Pattern Found", activePatternToString());
         }
+        telemetry.update();
+
+        // ===== TURRET GOES TO SHOOTING POSITION =====
+        turret.setTargetPosition(FORWARD_TICKS);
+        turret.setPower(.5);
+        while (opModeIsActive() && turret.isBusy()) {
+            telemetry.addData("Turret", turret.getCurrentPosition());
+            telemetry.addData("Pattern", activePatternToString());
+            telemetry.update();
+        }
+
         sleep(1000);
         // ===== FIRST SHOOT =====
         shootSequence();
@@ -159,14 +165,14 @@ public class aprilBlueClose extends LinearOpMode {
 
         // ===== CYCLE 1 MOVEMENT =====
         Action cycleMove = drive.actionBuilder(new Pose2d(-20, -20, Math.toRadians(218)))
-                .strafeToLinearHeading(new Vector2d(-10, -37), Math.toRadians(256))
+                .strafeToLinearHeading(new Vector2d(-12, -35), Math.toRadians(256))
                 .waitSeconds(.1)
-                .strafeToConstantHeading(new Vector2d(-12, -66))
+                .strafeToConstantHeading(new Vector2d(-14, -66))
                 .waitSeconds(.25)
                 .build();
         Actions.runBlocking(cycleMove);
 
-        Action shoot2 = drive.actionBuilder(new Pose2d(-12,-66, Math.toRadians(256)))
+        Action shoot2 = drive.actionBuilder(new Pose2d(-14,-66, Math.toRadians(256)))
                 .strafeToLinearHeading(new Vector2d(-20,-22), Math.toRadians(218))
                 .build();
 
@@ -177,13 +183,14 @@ public class aprilBlueClose extends LinearOpMode {
                 .waitSeconds(.25)
                 .build();
 
-        Action shoot3 = drive.actionBuilder(new Pose2d(9,-81, Math.toRadians(256)))
+        Action shoot3 = drive.actionBuilder(new Pose2d(11,-81, Math.toRadians(256)))
                 .strafeToConstantHeading(new Vector2d(9,-65))
                 .strafeToLinearHeading(new Vector2d(-20,-22), Math.toRadians(218))
                 .build();
         Action park = drive.actionBuilder(new Pose2d(-20,-22, Math.toRadians(218)))
                 .strafeToLinearHeading(new Vector2d(9.5,-50), Math.toRadians(260))
                 .build();
+
         // ===== RETURN TURRET TO SHOOTING POSITION AFTER CYCLE =====
         turret.setTargetPosition(FORWARD_TICKS);
         turret.setPower(0.5);

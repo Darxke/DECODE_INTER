@@ -36,7 +36,7 @@ public class AprilFastRobot extends LinearOpMode {
     private MecanumDrive drive;
 
     // ===== TURNTABLE POSITIONS (encoder ticks) =====
-    private static final int RIGHT_SCAN_TICKS = 101;  // turret turned left
+    private static final int RIGHT_SCAN_TICKS = 96;  // turret turned left
     private static final int FORWARD_TICKS = 0;       // forward shooting
 
     // ===== KICKER POSITIONS =====
@@ -210,7 +210,7 @@ public class AprilFastRobot extends LinearOpMode {
 
         // ===== SECOND SHOOT =====
         intake.setPower(1);
-        turret.setTargetPosition(99);
+        turret.setTargetPosition(90);
         turret.setPower(0.5);
         Actions.runBlocking(cycle1);
         intake.setPower(-1);

@@ -12,6 +12,7 @@ import com.acmerobotics.roadrunner.SleepAction;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.ColorSensor;
+import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.Servo;
@@ -36,7 +37,7 @@ public class aprilBlueFar extends LinearOpMode {
     private MecanumDrive drive;
 
     // ===== TURNTABLE POSITIONS (encoder ticks) =====
-    private static final int RIGHT_SCAN_TICKS = -102;  // turret turned left
+    private static final int RIGHT_SCAN_TICKS = -100;  // turret turned left
     private static final int FORWARD_TICKS = 0;       // forward shooting
 
     // ===== KICKER POSITIONS =====
@@ -174,12 +175,14 @@ public class aprilBlueFar extends LinearOpMode {
 
         // ===== SECOND SHOOT =====
         intake.setPower(1);
-        turret.setTargetPosition(-98);
+        turret.setTargetPosition(-95);
         turret.setPower(0.5);
+        turret.setMode(DcMotor.RunMode.RUN_TO_POSITION);
         Actions.runBlocking(cycle);
         intake.setPower(-1);
         Actions.runBlocking(shoot);
         intake.setPower(0);
+
         shootSequence();
         Actions.runBlocking(parking);
 
