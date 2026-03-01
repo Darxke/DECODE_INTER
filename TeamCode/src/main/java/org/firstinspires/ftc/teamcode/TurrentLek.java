@@ -21,8 +21,8 @@ public class TurrentLek extends LinearOpMode {
     private RevBlinkinLedDriver led;
     private List<LynxModule> allHubs;
 
-    private static final double RPM_CLOSE = 2571;
-    private static final double RPM_FAR   = 3268;
+    private static final double RPM_CLOSE = 50;
+    private static final double RPM_FAR   = 2700;
     private static final double TICKS_PER_REV = 28.0;
     private static final double VELOCITY_TOLERANCE = 45.0;
 
@@ -127,7 +127,7 @@ public class TurrentLek extends LinearOpMode {
                 double avgVel = (outtakeL.getVelocity() + outtakeR.getVelocity()) / 2.0;
                 led.setPattern(Math.abs(avgVel - targetVel) < VELOCITY_TOLERANCE ?
                         RevBlinkinLedDriver.BlinkinPattern.BREATH_BLUE : RevBlinkinLedDriver.BlinkinPattern.FIRE_LARGE);
-            } else {
+               } else {
                 outtakeL.setVelocity(0); outtakeR.setVelocity(0);
                 led.setPattern(RevBlinkinLedDriver.BlinkinPattern.BLACK);
             }
@@ -136,7 +136,6 @@ public class TurrentLek extends LinearOpMode {
             if (gamepad2.x && !lastX2) fireKicker(1);
             if (gamepad2.b && !lastB2) fireKicker(2);
             if (gamepad2.y && !lastY2) fireKicker(3);
-            if (gamepad2.a && !lastA2) fireKicker(4);
 
             lastX2 = gamepad2.x; lastB2 = gamepad2.b; lastY2 = gamepad2.y; lastA2 = gamepad2.a;
 

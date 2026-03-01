@@ -15,15 +15,19 @@ import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.hardware.lynx.LynxModule;
 import java.util.List;
 
-@TeleOp(name = "TurrenTrackingBLue", group = "Production")
+@TeleOp(name = "TurretTrackingFixedVelo", group = "Production")
 public class TurrentTrackingBlue extends LinearOpMode {
 
-    // --- SHOOTING & PID CONSTANTS ---
-    private final int TARGET_ID = 20; // Changed from 24 to 20
+    // --- SHOOTING CONSTANTS ---
+    private final int TARGET_ID = 20;
     private static double HORIZONTAL_OFFSET = 5.6;
-    private double START_RPM = 900, RPM_PER_INCH = 5;
     private double kP_Turret = 0.040, kD_Turret = 0.080;
     private double previousError = 0, smoothedTx = 0, filterWeight = 0.45;
+
+    // Fixed Velocity Presets (RPM)
+    private static final double VELO_START = 2600; // Gamepad 2 Start
+    private static final double VELO_BACK = 2250;  // Gamepad 2 Back
+    private static final double TICKS_PER_REV = 28.0; // Typical for high speed outtake motors
 
     // --- HARDWARE ---
     private DcMotorEx leftFront, rightFront, leftBack, rightBack, turret;
@@ -45,12 +49,12 @@ public class TurrentTrackingBlue extends LinearOpMode {
     private boolean prevLB2 = false, prevRB2 = false;
     private boolean slowMode = false, intakeCancelStop = false;
 
-    // --- OPTIMIZATION & TIMERS ---
+    // --- OPTIMIZATION & VELOCITY ---
     private int sensorCycleIndex = 0;
     private double lastSentVelocity = -1;
     private BallColor[] cachedColors = new BallColor[7];
-    private double lastKnownTargetVelocity = 1200;
-    private boolean targetVisible = false; // Renamed for clarity
+    private double manualTargetRPM = VELO_START; // Default starting RPM
+    private boolean targetVisible = false;
     private long jamClearTimer = 0;
     private int prevOccupied = 0;
 
@@ -86,10 +90,15 @@ public class TurrentTrackingBlue extends LinearOpMode {
             prevOccupied = occupied;
 
             handleIntake(systemFull, now);
+
+            // MANUAL VELOCITY SELECTION (Gamepad 2)
+            if (gamepad2.start) manualTargetRPM = VELO_START;
+            if (gamepad2.back) manualTargetRPM = VELO_BACK;
+
             updateOuttake();
             updateLEDs(lastSentVelocity);
 
-            processVision();
+            processVision(); // Vision still used for Turret tracking, but NOT velocity
             handleTurret();
 
             if (gamepad1.a && !prevA1) slowMode = !slowMode;
@@ -101,7 +110,7 @@ public class TurrentTrackingBlue extends LinearOpMode {
             handleKickerInputs(now);
             updateKickerHardware(now);
 
-            telemetry.addData("Tracking ID", TARGET_ID);
+            telemetry.addData("Shooter RPM", manualTargetRPM);
             telemetry.addData("Target Visible", targetVisible);
             telemetry.addData("Occupied Slots", occupied);
             telemetry.update();
@@ -112,11 +121,18 @@ public class TurrentTrackingBlue extends LinearOpMode {
         }
     }
 
-    private void driveRobot(double y, double x, double rx) {
-        double lf = y + x + rx, rf = y - x - rx, lb = y - x + rx, rb = y + x - rx;
-        double max = Math.max(1.0, Math.max(Math.abs(lf), Math.max(Math.abs(rf), Math.max(Math.abs(lb), Math.abs(rb)))));
-        leftFront.setPower(lf/max); rightFront.setPower(rf/max);
-        leftBack.setPower(lb/max); rightBack.setPower(rb/max);
+    private void updateOuttake() {
+        // Convert RPM to Ticks/Second
+        double targetTicksPerSec = (manualTargetRPM * TICKS_PER_REV) / 60.0;
+
+        // Use Right Trigger to stop the motor (per your original logic)
+        double currentRequest = (gamepad2.right_trigger > 0.3) ? 0 : targetTicksPerSec;
+
+        if (Math.abs(currentRequest - lastSentVelocity) > 5) {
+            outtakeL.setVelocity(currentRequest);
+            outtakeR.setVelocity(currentRequest);
+            lastSentVelocity = currentRequest;
+        }
     }
 
     private void processVision() {
@@ -126,8 +142,7 @@ public class TurrentTrackingBlue extends LinearOpMode {
             for (LLResultTypes.FiducialResult f : result.getFiducialResults()) {
                 if (f.getFiducialId() == TARGET_ID) {
                     targetVisible = true;
-                    double distInches = Math.abs(f.getTargetPoseRobotSpace().getPosition().z * 39.37);
-                    lastKnownTargetVelocity = clamp(START_RPM + (distInches * RPM_PER_INCH), 1000, 2000);
+                    // Note: We no longer calculate RPM based on distance here
                     double rawTx = f.getTargetXDegrees() + HORIZONTAL_OFFSET;
                     smoothedTx = (rawTx * filterWeight) + (smoothedTx * (1.0 - filterWeight));
                     break;
@@ -153,6 +168,7 @@ public class TurrentTrackingBlue extends LinearOpMode {
         }
     }
 
+    // --- ALL REMAINING HELPER METHODS REMAIN THE SAME AS YOUR ORIGINAL ---
     private void initHardware() {
         led = hardwareMap.get(RevBlinkinLedDriver.class, "led");
         leftFront = hardwareMap.get(DcMotorEx.class, "leftFront");
@@ -181,6 +197,13 @@ public class TurrentTrackingBlue extends LinearOpMode {
         limelight = hardwareMap.get(Limelight3A.class, "limelight");
     }
 
+    private void driveRobot(double y, double x, double rx) {
+        double lf = y + x + rx, rf = y - x - rx, lb = y - x + rx, rb = y + x - rx;
+        double max = Math.max(1.0, Math.max(Math.abs(lf), Math.max(Math.abs(rf), Math.max(Math.abs(lb), Math.abs(rb)))));
+        leftFront.setPower(lf/max); rightFront.setPower(rf/max);
+        leftBack.setPower(lb/max); rightBack.setPower(rb/max);
+    }
+
     private boolean isScorable(BallColor color) { return (color == BallColor.PURPLE || color == BallColor.GREEN); }
 
     private void handleIntake(boolean systemFull, long now) {
@@ -190,14 +213,6 @@ public class TurrentTrackingBlue extends LinearOpMode {
         else if (gamepad2.dpad_down) intake.setPower(-1.0);
         else if (gamepad2.dpad_up) intake.setPower((systemFull && !intakeCancelStop) ? 0 : 1.0);
         else intake.setPower(0);
-    }
-
-    private void updateOuttake() {
-        double targetVel = (gamepad2.right_trigger > 0.3) ? 0 : lastKnownTargetVelocity;
-        if (Math.abs(targetVel - lastSentVelocity) > 5) {
-            outtakeL.setVelocity(targetVel); outtakeR.setVelocity(targetVel);
-            lastSentVelocity = targetVel;
-        }
     }
 
     private void handleKickerInputs(long now) {
@@ -218,10 +233,11 @@ public class TurrentTrackingBlue extends LinearOpMode {
         }
     }
 
-    private void updateLEDs(double targetVel) {
-        if (targetVel <= 0) led.setPattern(RevBlinkinLedDriver.BlinkinPattern.BLUE);
+    private void updateLEDs(double currentVelTicks) {
+        double targetTicks = (manualTargetRPM * TICKS_PER_REV) / 60.0;
+        if (currentVelTicks <= 0) led.setPattern(RevBlinkinLedDriver.BlinkinPattern.BLUE);
         else {
-            if (Math.abs(outtakeL.getVelocity() - targetVel) < 50) led.setPattern(RevBlinkinLedDriver.BlinkinPattern.BREATH_BLUE);
+            if (Math.abs(outtakeL.getVelocity() - targetTicks) < 50) led.setPattern(RevBlinkinLedDriver.BlinkinPattern.BREATH_BLUE);
             else led.setPattern(RevBlinkinLedDriver.BlinkinPattern.FIRE_LARGE);
         }
     }
