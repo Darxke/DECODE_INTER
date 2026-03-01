@@ -129,8 +129,8 @@ public class aprilRedCloseLogic extends LinearOpMode {
         waitForStart();
 
         // ===== START INTAKE =====
-        outtakeL.setVelocity(1200);
-        outtakeR.setVelocity(1200);// RPM
+        outtakeL.setVelocity(1050);
+        outtakeR.setVelocity(1050);// RPM
         if (isStopRequested()) return;
 
         // ===== DRIVE BACKWARD WHILE SCANNING =====
@@ -142,7 +142,7 @@ public class aprilRedCloseLogic extends LinearOpMode {
         // ===== TURRET GOES BACK TO SHOOTING POSITION ONCE APRILTAG DETECTED =====
         updatePatternFromLimelight(); // check one last time after moving
         if (activePattern != null) {
-            turret.setTargetPosition(0);
+            turret.setTargetPosition(-11);
             turret.setPower(0.5);
             while (opModeIsActive() && turret.isBusy()) {
                 telemetry.addData("Turret", turret.getCurrentPosition());
@@ -150,7 +150,7 @@ public class aprilRedCloseLogic extends LinearOpMode {
                 telemetry.update();
             }
         }
-        sleep(1250);
+        sleep(1000);
         // ===== FIRST SHOOT =====
         shootSequence();
         intake.setPower(1);
@@ -187,9 +187,8 @@ public class aprilRedCloseLogic extends LinearOpMode {
 
         // ===== SECOND SHOOT =====
         intake.setPower(-1);
-        outtakeL.setVelocity(1150);
-        outtakeR.setVelocity(1150);// RPM
-        turret.setTargetPosition(11);
+        outtakeL.setVelocity(900);
+        outtakeR.setVelocity(900);// RPM
         turret.setPower(.5);
         Actions.runBlocking(shoot2);
         intake.setPower(0);
@@ -268,7 +267,7 @@ public class aprilRedCloseLogic extends LinearOpMode {
                         break;
 
                     case 1: // wait up (longer)
-                        if (now - stateTime >= 500) { // 500ms instead of 350ms
+                        if (now - stateTime >= 400) { // 500ms instead of 350ms
                             setKicker(activeKicker, KICK_REST[activeKicker]);
                             stateTime = now;
                             shootState = 2;
@@ -276,7 +275,7 @@ public class aprilRedCloseLogic extends LinearOpMode {
                         break;
 
                     case 2: // wait down + interkick
-                        if (now - stateTime >=650) {
+                        if (now - stateTime >=600) {
                             shootIndex++;
                             shootState = 0;
                             activeKicker = -1;
