@@ -12,6 +12,7 @@ import com.acmerobotics.roadrunner.SleepAction;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.ColorSensor;
+import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.Servo;
@@ -27,6 +28,7 @@ public class aprilRedFarLogic extends LinearOpMode {
     // ===== HARDWARE =====
     private DcMotorEx turret;
     private DcMotorEx outtakeL;
+    private Servo hood;
     private DcMotorEx outtakeR;
 
     private DcMotorEx intake;
@@ -36,7 +38,7 @@ public class aprilRedFarLogic extends LinearOpMode {
     private MecanumDrive drive;
 
     // ===== TURNTABLE POSITIONS (encoder ticks) =====
-    private static final int RIGHT_SCAN_TICKS = 96;  // turret turned left
+    private static final int RIGHT_SCAN_TICKS = 111;  // turret turned left
     private static final int FORWARD_TICKS = 0;       // forward shooting
 
     // ===== KICKER POSITIONS =====
@@ -71,16 +73,18 @@ public class aprilRedFarLogic extends LinearOpMode {
         turret.setPower(0.5);
 
         outtakeL = hardwareMap.get(DcMotorEx.class, "outtakeL");
+        hood = hardwareMap.get(Servo.class, "hood");
+
         outtakeR = hardwareMap.get(DcMotorEx.class, "outtakeR");
 
         outtakeL.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
         outtakeR.setDirection(DcMotorSimple.Direction.REVERSE);
         outtakeR.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
+        turret.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
         intake = hardwareMap.get(DcMotorEx.class, "intake");
-
+        hood.setPosition(0);
         kickersInit();
-
         // Color sensors
         sensors[0] = hardwareMap.get(ColorSensor.class, "color1");
         sensors[1] = hardwareMap.get(ColorSensor.class, "color2");
@@ -126,8 +130,8 @@ public class aprilRedFarLogic extends LinearOpMode {
         waitForStart();
 
         // ===== START INTAKE =====
-        outtakeR.setVelocity(1525); // RPM
-        outtakeL.setVelocity(1525);
+        outtakeR.setVelocity(1250); // RPM
+        outtakeL.setVelocity(1250);
         if (isStopRequested()) return;
 
         // ===== TURRET GOES BACK TO SHOOTING POSITION ONCE APRILTAG DETECTED =====
@@ -135,13 +139,14 @@ public class aprilRedFarLogic extends LinearOpMode {
         if (activePattern != null) {
             turret.setTargetPosition(RIGHT_SCAN_TICKS);
             turret.setPower(0.5);
+            turret.setMode(DcMotor.RunMode.RUN_TO_POSITION);
             while (opModeIsActive() && turret.isBusy()) {
                 telemetry.addData("Turret", turret.getCurrentPosition());
                 telemetry.addData("Pattern", activePatternToString());
                 telemetry.update();
             }
         }
-        sleep(2250);
+        sleep(2500);
         // ===== FIRST SHOOT =====
         shootSequence();
 
@@ -159,7 +164,7 @@ public class aprilRedFarLogic extends LinearOpMode {
                 .build();
 
         Action shoot = drive.actionBuilder(new Pose2d(29, 72, Math.toRadians(-273)))
-                .strafeToLinearHeading(new Vector2d(59, 12), Math.toRadians(-180))
+                .strafeToLinearHeading(new Vector2d(60, 16), Math.toRadians(-180))
                 .build();
 
 //        Action cycle2 = drive.actionBuilder(new Pose2d(59, 12, Math.toRadians(-180)))
@@ -173,7 +178,7 @@ public class aprilRedFarLogic extends LinearOpMode {
 //                .strafeToLinearHeading(new Vector2d(59, 12), Math.toRadians(-180))
 //                .build();
 
-        Action parking = drive.actionBuilder(new Pose2d(59, 12, Math.toRadians(-180)))
+        Action parking = drive.actionBuilder(new Pose2d(60, 16, Math.toRadians(-180)))
                 .strafeToLinearHeading(new Vector2d(35, 20), Math.toRadians(-180))
                 .build();
 
@@ -184,9 +189,11 @@ public class aprilRedFarLogic extends LinearOpMode {
 
         // ===== SECOND SHOOT =====
         intake.setPower(1);
-        turret.setTargetPosition(96);
+        turret.setTargetPosition(72);
         turret.setPower(0.5);
+        turret.setMode(DcMotor.RunMode.RUN_TO_POSITION);
         Actions.runBlocking(cycle);
+        sleep(50);
         intake.setPower(-1);
         Actions.runBlocking(shoot);
         intake.setPower(0);
@@ -265,7 +272,7 @@ public class aprilRedFarLogic extends LinearOpMode {
                         break;
 
                     case 1: // wait up (longer)
-                        if (now - stateTime >= 1000) { // 500ms instead of 350ms
+                        if (now - stateTime >= 900) { // 500ms instead of 350ms
                             setKicker(activeKicker, KICK_REST[activeKicker]);
                             stateTime = now;
                             shootState = 2;
@@ -273,7 +280,7 @@ public class aprilRedFarLogic extends LinearOpMode {
                         break;
 
                     case 2: // wait down + interkick
-                        if (now - stateTime >= 1750) {
+                        if (now - stateTime >= 1800) {
                             shootIndex++;
                             shootState = 0;
                             activeKicker = -1;

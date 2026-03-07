@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode;
 
+import com.acmerobotics.roadrunner.ParallelAction;
 import com.acmerobotics.roadrunner.ProfileAccelConstraint;
 import com.acmerobotics.roadrunner.TranslationalVelConstraint;
 import com.acmerobotics.roadrunner.Vector2d;
@@ -12,6 +13,7 @@ import com.acmerobotics.roadrunner.SleepAction;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.ColorSensor;
+import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.Servo;
@@ -26,6 +28,7 @@ public class aprilRedCloseLogic extends LinearOpMode {
 
     // ===== HARDWARE =====
     private DcMotorEx turret;
+    private Servo hood;
     private DcMotorEx outtakeL;
     private DcMotorEx outtakeR;
     private DcMotorEx intake;
@@ -35,7 +38,7 @@ public class aprilRedCloseLogic extends LinearOpMode {
     private MecanumDrive drive;
 
     // ===== TURNTABLE POSITIONS (encoder ticks) =====
-    private static final int LEFT_SCAN_TICKS = -350;  // turret turned left
+    private static final int LEFT_SCAN_TICKS = -250;  // turret turned left
     private static final int FORWARD_TICKS = 0;       // forward shooting
 
     // ===== KICKER POSITIONS =====
@@ -65,16 +68,14 @@ public class aprilRedCloseLogic extends LinearOpMode {
         // ===== HARDWARE MAP =====
         turret = hardwareMap.get(DcMotorEx.class, "turret");
         turret.setMode(DcMotorEx.RunMode.STOP_AND_RESET_ENCODER);
-        turret.setTargetPosition(LEFT_SCAN_TICKS);
-        turret.setMode(DcMotorEx.RunMode.RUN_TO_POSITION);
-        turret.setPower(0.5);
-
+        hood= hardwareMap.get(Servo.class, "hood");
         outtakeL = hardwareMap.get(DcMotorEx.class, "outtakeL");
         outtakeR = hardwareMap.get(DcMotorEx.class, "outtakeR");
 
         outtakeL.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
         outtakeR.setDirection(DcMotorSimple.Direction.REVERSE);
         outtakeR.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
+        turret.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
         intake = hardwareMap.get(DcMotorEx.class, "intake");
 
@@ -129,54 +130,67 @@ public class aprilRedCloseLogic extends LinearOpMode {
         waitForStart();
 
         // ===== START INTAKE =====
-        outtakeL.setVelocity(1050);
-        outtakeR.setVelocity(1050);// RPM
+        outtakeL.setVelocity(1075);
+        outtakeR.setVelocity(1075);// RPM
         if (isStopRequested()) return;
 
         // ===== DRIVE BACKWARD WHILE SCANNING =====
+        Action turretToScan = telemetryPacket -> {
+            turret.setTargetPosition(LEFT_SCAN_TICKS);
+            turret.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+            turret.setPower(0.5);
+            return turret.isBusy(); // Keeps action alive until turret reaches position
+        };
         Action moveBackward = drive.actionBuilder(startPose)
                 .strafeToConstantHeading(new Vector2d(-20, 20))
                 .build();
-        Actions.runBlocking(moveBackward);
+        Actions.runBlocking(
+                new ParallelAction(
+                        moveBackward,
+                        turretToScan
+                )
+        );
 
         // ===== TURRET GOES BACK TO SHOOTING POSITION ONCE APRILTAG DETECTED =====
         updatePatternFromLimelight(); // check one last time after moving
         if (activePattern != null) {
-            turret.setTargetPosition(-11);
+            turret.setTargetPosition(0);
             turret.setPower(0.5);
+            turret.setMode(DcMotor.RunMode.RUN_TO_POSITION);
             while (opModeIsActive() && turret.isBusy()) {
                 telemetry.addData("Turret", turret.getCurrentPosition());
                 telemetry.addData("Pattern", activePatternToString());
                 telemetry.update();
             }
         }
-        sleep(1000);
+        sleep(1150);
         // ===== FIRST SHOOT =====
-        shootSequence();
+        shootSequence1();
         intake.setPower(1);
 
         // ===== CYCLE 1 MOVEMENT =====
         Action cycleMove = drive.actionBuilder(new Pose2d(-20, 20, Math.toRadians(-218)))
-                .strafeToLinearHeading(new Vector2d(-10.5, 40), Math.toRadians(-256))
+                .strafeToLinearHeading(new Vector2d(-11.5, 40), Math.toRadians(-256))
                 .waitSeconds(.1)
-                .strafeToConstantHeading(new Vector2d(-13, 67))
+                .strafeToConstantHeading(new Vector2d(-14, 66))
                 .waitSeconds(.25)
                 .build();
         Actions.runBlocking(cycleMove);
 
-        Action shoot2 = drive.actionBuilder(new Pose2d(-13,67, Math.toRadians(-256)))
+        Action shoot2 = drive.actionBuilder(new Pose2d(-14,66, Math.toRadians(-256)))
                 .strafeToLinearHeading(new Vector2d(-20,20), Math.toRadians(-218))
                 .build();
 
         Action cycle2 = drive.actionBuilder(new Pose2d(-20,20, Math.toRadians(-218)))
                 .strafeToLinearHeading(new Vector2d(12.5, 48), Math.toRadians(-256))
                 .waitSeconds(.1)
-                .strafeToConstantHeading(new Vector2d(10, 81))
+                .strafeToConstantHeading(new Vector2d(10, 83))
                 .waitSeconds(.25)
                 .build();
 
-        Action shoot3 = drive.actionBuilder(new Pose2d(10,81, Math.toRadians(-256)))
-                .strafeToConstantHeading(new Vector2d(11,70))
+        Action shoot3 = drive.actionBuilder(new Pose2d(10,83, Math.toRadians(-256)))
+                .strafeToConstantHeading(new Vector2d(10,70))
+                .waitSeconds(.1)
                 .strafeToLinearHeading(new Vector2d(-20,20), Math.toRadians(-218))
                 .build();
         Action park = drive.actionBuilder(new Pose2d(-20,20, Math.toRadians(-218)))
@@ -186,19 +200,25 @@ public class aprilRedCloseLogic extends LinearOpMode {
 
 
         // ===== SECOND SHOOT =====
+        turret.setTargetPosition(-25);
+        turret.setPower(0.5);
+        turret.setMode(DcMotor.RunMode.RUN_TO_POSITION);
         intake.setPower(-1);
-        outtakeL.setVelocity(900);
-        outtakeR.setVelocity(900);// RPM
+        outtakeL.setVelocity(1080);
+        outtakeR.setVelocity(1080);// RPM
         turret.setPower(.5);
         Actions.runBlocking(shoot2);
         intake.setPower(0);
-        shootSequence();
+        shootSequence2();
         intake.setPower(1);
         Actions.runBlocking(cycle2);
         intake.setPower(-1);
+        turret.setTargetPosition(-25);
+        turret.setPower(0.5);
+        turret.setMode(DcMotor.RunMode.RUN_TO_POSITION);
         Actions.runBlocking(shoot3);
         intake.setPower(0);
-        shootSequence();
+        shootSequence2();
         Actions.runBlocking(park);
 
         // ===== STOP INTAKE AT END =====
@@ -232,7 +252,75 @@ public class aprilRedCloseLogic extends LinearOpMode {
         }
     }
 
-    private void shootSequence() {
+    private void shootSequence1() {
+        if (activePattern == null) return;
+
+        shooting = true;
+        shootIndex = 0;
+        shootState = 0;
+        activeKicker = -1;
+        stateTime = System.currentTimeMillis();
+        for (int i = 0; i < 3; i++) kickerUsed[i] = false;
+
+        while (opModeIsActive() && shooting) {
+            long now = System.currentTimeMillis();
+
+            if (shootIndex < 3) {
+                switch (shootState) {
+                    case 0: // STEP 1: POSITION THE HOOD
+                        if (shootIndex == 0 || shootIndex == 2) {
+                            hood.setPosition(0); // UP for ball 1 & 3
+                        } else {
+                            hood.setPosition(0.35);   // DOWN for ball 2
+                        }
+                        stateTime = now;
+                        shootState = 1;
+                        break;
+
+                    case 1: // STEP 2: WAIT FOR HOOD PHYSICAL TRAVEL + FIRE
+                        if (now - stateTime >= 300) { // 300ms buffer for hood
+                            activeKicker = findMatchingKicker(activePattern[shootIndex]);
+                            if (activeKicker == -1) activeKicker = findAnyLoadedKicker();
+
+                            if (activeKicker != -1) {
+                                setKicker(activeKicker, KICK_FIRE[activeKicker]);
+                                stateTime = now;
+                                shootState = 2;
+                            } else {
+                                shootIndex++; // Skip empty
+                                shootState = 0;
+                            }
+                        }
+                        break;
+
+                    case 2: // STEP 3: WAIT FOR SHOT CLEARANCE
+                        if (now - stateTime >= 525) {
+                            setKicker(activeKicker, KICK_REST[activeKicker]);
+                            stateTime = now;
+                            shootState = 3;
+                        }
+                        break;
+
+                    case 3: // STEP 4: COOLDOWN & INCREMENT
+                        if (now - stateTime >= 400) {
+                            shootIndex++;
+                            shootState = 0;
+                            activeKicker = -1;
+                        }
+                        break;
+                }
+            } else {
+                shooting = false;
+            }
+
+            telemetry.addData("Pattern", activePatternToString());
+            telemetry.addData("Shoot Index", shootIndex);
+            telemetry.addData("State", shootState);
+            telemetry.update();
+        }
+    }
+
+    private void shootSequence2() {
         if (activePattern == null) return;
 
         shooting = true;
@@ -267,7 +355,7 @@ public class aprilRedCloseLogic extends LinearOpMode {
                         break;
 
                     case 1: // wait up (longer)
-                        if (now - stateTime >= 400) { // 500ms instead of 350ms
+                        if (now - stateTime >= 500) { // 500ms instead of 350ms
                             setKicker(activeKicker, KICK_REST[activeKicker]);
                             stateTime = now;
                             shootState = 2;
@@ -275,7 +363,7 @@ public class aprilRedCloseLogic extends LinearOpMode {
                         break;
 
                     case 2: // wait down + interkick
-                        if (now - stateTime >=600) {
+                        if (now - stateTime >=650) {
                             shootIndex++;
                             shootState = 0;
                             activeKicker = -1;

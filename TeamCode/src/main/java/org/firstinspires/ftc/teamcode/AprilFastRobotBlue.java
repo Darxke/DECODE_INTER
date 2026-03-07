@@ -12,6 +12,7 @@ import com.acmerobotics.roadrunner.SleepAction;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.ColorSensor;
+import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.Servo;
@@ -36,7 +37,7 @@ public class AprilFastRobotBlue extends LinearOpMode {
     private MecanumDrive drive;
 
     // ===== TURNTABLE POSITIONS (encoder ticks) =====
-    private static final int RIGHT_SCAN_TICKS = -105;  // turret turned left
+    private static final int RIGHT_SCAN_TICKS = -100;  // turret turned left
     private static final int FORWARD_TICKS = 0;       // forward shooting
 
     // ===== KICKER POSITIONS =====
@@ -57,6 +58,7 @@ public class AprilFastRobotBlue extends LinearOpMode {
     private int shootIndex = 0;
     private int shootState = 0;
     private long stateTime = 0;
+    private Servo hood;
     private int activeKicker = -1;
     private boolean[] kickerUsed = new boolean[3];
 
@@ -69,6 +71,7 @@ public class AprilFastRobotBlue extends LinearOpMode {
         turret.setTargetPosition(FORWARD_TICKS);
         turret.setMode(DcMotorEx.RunMode.RUN_TO_POSITION);
         turret.setPower(0.5);
+        hood = hardwareMap.get(Servo.class, "hood");
 
         outtakeL = hardwareMap.get(DcMotorEx.class, "outtakeL");
         outtakeR = hardwareMap.get(DcMotorEx.class, "outtakeR");
@@ -76,11 +79,13 @@ public class AprilFastRobotBlue extends LinearOpMode {
         outtakeL.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
         outtakeR.setDirection(DcMotorSimple.Direction.REVERSE);
         outtakeR.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
+        turret.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
 
         intake = hardwareMap.get(DcMotorEx.class, "intake");
 
         kickersInit();
+        hood.setPosition(0);
 
         // Color sensors
         sensors[0] = hardwareMap.get(ColorSensor.class, "color1");
@@ -128,8 +133,8 @@ public class AprilFastRobotBlue extends LinearOpMode {
         waitForStart();
 
         // ===== START INTAKE =====
-        outtakeL.setVelocity(1525); // RPM
-        outtakeR.setVelocity(1525); // RPM
+        outtakeL.setVelocity(1350);// RPM
+        outtakeR.setVelocity(1350); // RPM
 
         if (isStopRequested()) return;
 
@@ -138,13 +143,14 @@ public class AprilFastRobotBlue extends LinearOpMode {
         if (activePattern != null) {
             turret.setTargetPosition(RIGHT_SCAN_TICKS);
             turret.setPower(0.5);
+            turret.setMode(DcMotor.RunMode.RUN_TO_POSITION);
             while (opModeIsActive() && turret.isBusy()) {
                 telemetry.addData("Turret", turret.getCurrentPosition());
                 telemetry.addData("Pattern", activePatternToString());
                 telemetry.update();
             }
         }
-        sleep(2200);
+        sleep(2600);
         // ===== FIRST SHOOT =====
         shootSequence();
 
@@ -218,7 +224,9 @@ public class AprilFastRobotBlue extends LinearOpMode {
 
         // ===== SECOND SHOOT =====
         intake.setPower(1);
-        turret.setTargetPosition(-105);
+        turret.setTargetPosition(-90);
+        turret.setPower(.5);
+        turret.setMode(DcMotor.RunMode.RUN_TO_POSITION);
         turret.setPower(0.5);
         Actions.runBlocking(cycle);
         intake.setPower(-1);
@@ -295,7 +303,7 @@ public class AprilFastRobotBlue extends LinearOpMode {
                         break;
 
                     case 1: // wait up (longer)
-                        if (now - stateTime >= 1000) { // 500ms instead of 350ms
+                        if (now - stateTime >= 900) { // 500ms instead of 350ms
                             setKicker(activeKicker, KICK_REST[activeKicker]);
                             stateTime = now;
                             shootState = 2;
@@ -303,7 +311,7 @@ public class AprilFastRobotBlue extends LinearOpMode {
                         break;
 
                     case 2: // wait down + interkick
-                        if (now - stateTime >= 1750) {
+                        if (now - stateTime >= 1800) {
                             shootIndex++;
                             shootState = 0;
                             activeKicker = -1;

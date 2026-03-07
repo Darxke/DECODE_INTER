@@ -12,6 +12,7 @@ import com.acmerobotics.roadrunner.SleepAction;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.ColorSensor;
+import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.Servo;
@@ -36,7 +37,7 @@ public class AprilFastRobot extends LinearOpMode {
     private MecanumDrive drive;
 
     // ===== TURNTABLE POSITIONS (encoder ticks) =====
-    private static final int RIGHT_SCAN_TICKS = 96;  // turret turned left
+    private static final int RIGHT_SCAN_TICKS = 111;  // turret turned left
     private static final int FORWARD_TICKS = 0;       // forward shooting
 
     // ===== KICKER POSITIONS =====
@@ -76,6 +77,7 @@ public class AprilFastRobot extends LinearOpMode {
         outtakeL.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
         outtakeR.setDirection(DcMotorSimple.Direction.REVERSE);
         outtakeR.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
+        turret.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
         intake = hardwareMap.get(DcMotorEx.class, "intake");
 
@@ -127,8 +129,8 @@ public class AprilFastRobot extends LinearOpMode {
         waitForStart();
 
         // ===== START INTAKE =====
-        outtakeL.setVelocity(1525); // RPM
-        outtakeR.setVelocity(1525);
+        outtakeL.setVelocity(1350); // RPM
+        outtakeR.setVelocity(1350);
         if (isStopRequested()) return;
 
         // ===== TURRET GOES BACK TO SHOOTING POSITION ONCE APRILTAG DETECTED =====
@@ -136,6 +138,7 @@ public class AprilFastRobot extends LinearOpMode {
         if (activePattern != null) {
             turret.setTargetPosition(RIGHT_SCAN_TICKS);
             turret.setPower(0.5);
+            turret.setMode(DcMotor.RunMode.RUN_TO_POSITION);
             while (opModeIsActive() && turret.isBusy()) {
                 telemetry.addData("Turret", turret.getCurrentPosition());
                 telemetry.addData("Pattern", activePatternToString());

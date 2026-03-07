@@ -29,6 +29,7 @@ public class aprilBlueFar extends LinearOpMode {
     private DcMotorEx turret;
     private DcMotorEx outtakeL;
     private DcMotorEx outtakeR;
+    private Servo hood;
 
     private DcMotorEx intake;
     private ColorSensor[] sensors = new ColorSensor[6];
@@ -37,7 +38,7 @@ public class aprilBlueFar extends LinearOpMode {
     private MecanumDrive drive;
 
     // ===== TURNTABLE POSITIONS (encoder ticks) =====
-    private static final int RIGHT_SCAN_TICKS = -100;  // turret turned left
+    private static final int RIGHT_SCAN_TICKS = -100;  // turret urned left
     private static final int FORWARD_TICKS = 0;       // forward shooting
 
     // ===== KICKER POSITIONS =====
@@ -77,11 +78,13 @@ public class aprilBlueFar extends LinearOpMode {
         outtakeL.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
         outtakeR.setDirection(DcMotorSimple.Direction.REVERSE);
         outtakeR.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
+        hood = hardwareMap.get(Servo.class, "hood");
+        turret.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
         intake = hardwareMap.get(DcMotorEx.class, "intake");
 
         kickersInit();
-
+        hood.setPosition(0);
         // Color sensors
         sensors[0] = hardwareMap.get(ColorSensor.class, "color1");
         sensors[1] = hardwareMap.get(ColorSensor.class, "color2");
@@ -127,8 +130,8 @@ public class aprilBlueFar extends LinearOpMode {
         waitForStart();
 
         // ===== START INTAKE =====
-        outtakeL.setVelocity(1525); // RPM
-        outtakeR.setVelocity(1525); // RPM
+        outtakeL.setVelocity(1250); // RPM
+        outtakeR.setVelocity(1250); // RPM
 
         if (isStopRequested()) return;
 
@@ -143,7 +146,7 @@ public class aprilBlueFar extends LinearOpMode {
                 telemetry.update();
             }
         }
-        sleep(2500);
+        sleep(2600);
         // ===== FIRST SHOOT =====
         shootSequence();
 
@@ -161,10 +164,10 @@ public class aprilBlueFar extends LinearOpMode {
                 .build();
 
         Action shoot = drive.actionBuilder(new Pose2d(30.5, -68, Math.toRadians(273)))
-                .strafeToLinearHeading(new Vector2d(59, -12), Math.toRadians(180))
+                .strafeToLinearHeading(new Vector2d(59, -13), Math.toRadians(180))
                 .build();
 
-        Action parking = drive.actionBuilder(new Pose2d(59, -12, Math.toRadians(180)))
+        Action parking = drive.actionBuilder(new Pose2d(59, -13, Math.toRadians(180)))
                 .strafeToLinearHeading(new Vector2d(35, -20), Math.toRadians(180))
                 .build();
 
@@ -175,10 +178,11 @@ public class aprilBlueFar extends LinearOpMode {
 
         // ===== SECOND SHOOT =====
         intake.setPower(1);
-        turret.setTargetPosition(-95);
+        turret.setTargetPosition(-90);
         turret.setPower(0.5);
         turret.setMode(DcMotor.RunMode.RUN_TO_POSITION);
         Actions.runBlocking(cycle);
+        sleep(50);
         intake.setPower(-1);
         Actions.runBlocking(shoot);
         intake.setPower(0);
@@ -252,7 +256,7 @@ public class aprilBlueFar extends LinearOpMode {
                         break;
 
                     case 1: // wait up (longer)
-                        if (now - stateTime >= 1000) { // 500ms instead of 350ms
+                        if (now - stateTime >= 900) { // 500ms instead of 350ms
                             setKicker(activeKicker, KICK_REST[activeKicker]);
                             stateTime = now;
                             shootState = 2;
@@ -260,7 +264,7 @@ public class aprilBlueFar extends LinearOpMode {
                         break;
 
                     case 2: // wait down + interkick
-                        if (now - stateTime >= 1750) {
+                        if (now - stateTime >= 1800) {
                             shootIndex++;
                             shootState = 0;
                             activeKicker = -1;
